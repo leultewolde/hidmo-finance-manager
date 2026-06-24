@@ -1,0 +1,6 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Implementation plan
+    url: https://github.com/leultewolde/hidmo-finance-manager/blob/main/docs/implementation-plan.md
+    about: Review the milestone sequence and acceptance gates before opening work.
+

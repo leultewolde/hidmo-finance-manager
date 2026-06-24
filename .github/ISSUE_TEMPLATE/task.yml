@@ -1,0 +1,46 @@
+name: Implementation task
+description: Track a scoped implementation change under an MVP milestone.
+title: ""
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: Keep tasks small enough to implement, test, and review independently.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: What observable result should this issue produce?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: List the work included and explicitly excluded.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Use a checklist of verifiable completion conditions.
+      placeholder: |
+        - [ ] Behavior is implemented
+        - [ ] Relevant tests pass
+        - [ ] Documentation is updated
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Financial-data and security considerations
+      description: Note authentication, authorization, secret, privacy, logging, or retry implications.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Link the parent milestone and relevant design sections.
+

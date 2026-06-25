@@ -11,14 +11,18 @@
     "dev": "pnpm db:up && pnpm dev:apps",
     "dev:apps": "dotenv -e .env -- concurrently --kill-others-on-fail --names web,worker \"pnpm --filter @hidmo/web dev\" \"pnpm --filter @hidmo/worker dev\"",
     "db:down": "docker compose down",
+    "db:generate": "pnpm --filter @hidmo/database db:generate",
     "db:logs": "docker compose logs -f postgres",
+    "db:migrate": "dotenv -e .env -- pnpm --filter @hidmo/database db:migrate",
+    "db:reset": "dotenv -e .env -- pnpm --filter @hidmo/database db:reset",
+    "db:seed": "dotenv -e .env -- pnpm --filter @hidmo/database db:seed",
     "db:up": "docker compose up -d --wait postgres",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "pnpm --filter './packages/**' typecheck && pnpm --filter './packages/**' build && pnpm --filter './apps/**' typecheck"
+    "test": "dotenv -e .env -- vitest run",
+    "test:watch": "dotenv -e .env -- vitest",
+    "typecheck": "pnpm --filter @hidmo/finance-engine build && pnpm --filter './packages/**' typecheck && pnpm --filter './packages/**' build && pnpm --filter './apps/**' typecheck"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

@@ -1,0 +1,1 @@
+ALTER TABLE "transaction_splits" ADD CONSTRAINT "transaction_splits_linked_liability_id_liabilities_id_fk" FOREIGN KEY ("linked_liability_id") REFERENCES "public"."liabilities"("id") ON DELETE set null ON UPDATE no action;

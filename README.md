@@ -52,6 +52,7 @@ is documented in [docs/gcp-architecture.md](docs/gcp-architecture.md).
 
 - [Implementation plan](docs/implementation-plan.md)
 - [Financial formula reference](docs/financial-formulas.md)
+- [Database workflow](docs/database-workflow.md)
 - [GCP beginner guide](docs/gcp-getting-started.md)
 - [Plaid beginner guide](docs/plaid-getting-started.md)
 
@@ -66,7 +67,7 @@ packages/
   classification/      transaction classification (placeholder)
   config/              validated runtime configuration
   contracts/           shared request and response schemas
-  database/            PostgreSQL connection utilities
+  database/            PostgreSQL schema, migrations, repositories, and seed
   finance-engine/      deterministic financial domain and calculations
   logging/             structured, redacted logging
   plaid/               Plaid adapter boundary (placeholder)
@@ -137,6 +138,7 @@ Readiness returns HTTP `503` when a required dependency is unavailable.
 Run the same checks as CI:
 
 ```bash
+pnpm db:up
 pnpm format:check
 pnpm lint
 pnpm typecheck
@@ -145,3 +147,4 @@ pnpm build
 ```
 
 GitHub Actions runs these checks for pull requests and pushes to `main`.
+Database tests recreate the local `public` schema and use synthetic data only.

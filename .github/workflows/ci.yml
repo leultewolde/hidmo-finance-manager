@@ -13,6 +13,27 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql://finance:finance@localhost:5432/finance_manager
+      LOG_LEVEL: silent
+      WEB_PORT: 3000
+      WORKER_PORT: 3001
+
+    services:
+      postgres:
+        image: postgres:18.1-alpine
+        env:
+          POSTGRES_DB: finance_manager
+          POSTGRES_PASSWORD: finance
+          POSTGRES_USER: finance
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U finance -d finance_manager"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
 
     steps:
       - name: Check out repository
@@ -43,7 +64,7 @@ jobs:
         run: pnpm typecheck
 
       - name: Test
-        run: pnpm test
+        run: pnpm exec vitest run
 
       - name: Build
         run: pnpm build

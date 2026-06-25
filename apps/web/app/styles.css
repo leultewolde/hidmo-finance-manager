@@ -120,6 +120,95 @@ li {
   line-height: 1.5;
 }
 
+.authHero {
+  min-height: 72vh;
+}
+
+.signInActions {
+  display: grid;
+  justify-items: start;
+  gap: 16px;
+  margin-top: 44px;
+}
+
+.primaryButton,
+.secondaryButton {
+  border: 1px solid #a6ce78;
+  border-radius: 999px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.primaryButton {
+  padding: 14px 22px;
+  color: #10130f;
+  background: #a6ce78;
+  font-weight: 650;
+}
+
+.secondaryButton {
+  padding: 11px 18px;
+  color: #d5d9d1;
+  background: transparent;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.authError {
+  max-width: 520px;
+  margin: 0;
+  color: #ff9e8f;
+}
+
+.securityCopy {
+  max-width: 620px;
+  margin: 0;
+  color: #adb5aa;
+  font-size: 1.1rem;
+  line-height: 1.7;
+}
+
+.dashboardShell {
+  padding: 64px 0 120px;
+}
+
+.dashboardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+  padding-bottom: 48px;
+  border-bottom: 1px solid #30362d;
+}
+
+.dashboardTitle {
+  max-width: 760px;
+  margin-bottom: 0;
+  font-size: clamp(2.8rem, 7vw, 6rem);
+}
+
+.ownerCard {
+  max-width: 760px;
+  margin-top: 72px;
+  padding: 32px;
+  border: 1px solid #30362d;
+  border-radius: 18px;
+  background: rgb(255 255 255 / 2%);
+}
+
+.ownerCard h2 {
+  max-width: none;
+}
+
+.ownerCard > p:last-child {
+  color: #adb5aa;
+  line-height: 1.7;
+}
+
 @media (max-width: 720px) {
   main {
     width: min(100% - 28px, 1120px);
@@ -137,5 +226,9 @@ li {
   .capabilities {
     grid-template-columns: 1fr;
     gap: 40px;
+  }
+
+  .dashboardHeader {
+    flex-direction: column;
   }
 }

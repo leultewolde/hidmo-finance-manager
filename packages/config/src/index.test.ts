@@ -5,6 +5,8 @@ import { getWebEnvironment, getWorkerEnvironment } from './index.js'
 const baseEnvironment = {
   APP_ENV: 'test',
   DATABASE_URL: 'postgresql://finance:finance@localhost:5432/finance_manager',
+  FIREBASE_OWNER_UID: 'owner-firebase-uid',
+  FIREBASE_PROJECT_ID: 'finance-manager-dev-500423',
   LOG_LEVEL: 'silent',
 }
 
@@ -16,6 +18,15 @@ describe('environment parsing', () => {
 
   it('rejects missing database configuration', () => {
     expect(() => getWebEnvironment({ APP_ENV: 'test' })).toThrow()
+  })
+
+  it('rejects missing owner authorization configuration', () => {
+    expect(() =>
+      getWebEnvironment({
+        ...baseEnvironment,
+        FIREBASE_OWNER_UID: '',
+      }),
+    ).toThrow()
   })
 
   it('coerces configured ports to numbers', () => {

@@ -9,6 +9,8 @@ const commonEnvironmentSchema = z.object({
 })
 
 const webEnvironmentSchema = commonEnvironmentSchema.extend({
+  FIREBASE_OWNER_UID: z.string().min(1),
+  FIREBASE_PROJECT_ID: z.string().min(1),
   WEB_PORT: z.coerce.number().int().positive().max(65_535).default(3000),
 })
 

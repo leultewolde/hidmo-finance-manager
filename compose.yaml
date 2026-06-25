@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:18.1-alpine
+    environment:
+      POSTGRES_DB: finance_manager
+      POSTGRES_PASSWORD: finance
+      POSTGRES_USER: finance
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U finance -d finance_manager']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    ports:
+      - '5432:5432'
+    volumes:
+      - finance-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  finance-postgres-data:

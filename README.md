@@ -53,3 +53,94 @@ is documented in [docs/gcp-architecture.md](docs/gcp-architecture.md).
 - [Implementation plan](docs/implementation-plan.md)
 - [GCP beginner guide](docs/gcp-getting-started.md)
 - [Plaid beginner guide](docs/plaid-getting-started.md)
+
+## Repository structure
+
+```text
+apps/
+  web/                 Next.js user interface and API
+  worker/              asynchronous HTTP task handler
+packages/
+  ai/                  Vertex AI boundary (placeholder)
+  classification/      transaction classification (placeholder)
+  config/              validated runtime configuration
+  contracts/           shared request and response schemas
+  database/            PostgreSQL connection utilities
+  finance-engine/      deterministic calculations (placeholder)
+  logging/             structured, redacted logging
+  plaid/               Plaid adapter boundary (placeholder)
+docs/                  product, architecture, and implementation guides
+```
+
+Placeholder packages reserve the intended dependency boundaries. Their product
+logic is implemented in later milestones.
+
+## Local development
+
+Prerequisites:
+
+- Node.js 22;
+- pnpm 9 through Corepack;
+- Docker Desktop with Docker Compose.
+
+From a clean checkout:
+
+```bash
+corepack enable
+pnpm install --frozen-lockfile
+cp .env.example .env
+pnpm dev
+```
+
+`pnpm dev` starts local PostgreSQL, waits for it to become healthy, and then
+starts:
+
+- web application: <http://localhost:3000>
+- worker service: <http://localhost:3001>
+
+Stop the web and worker with `Ctrl+C`, then stop PostgreSQL:
+
+```bash
+pnpm db:down
+```
+
+The PostgreSQL data volume is preserved by `db:down`. To inspect database logs:
+
+```bash
+pnpm db:logs
+```
+
+Do not put Plaid credentials or other secrets in `.env.example`. Local `.env`
+files are ignored by Git.
+
+## Health endpoints
+
+Liveness confirms that the process can serve requests:
+
+```text
+GET http://localhost:3000/api/health/live
+GET http://localhost:3001/health/live
+```
+
+Readiness validates required configuration and PostgreSQL connectivity:
+
+```text
+GET http://localhost:3000/api/health/ready
+GET http://localhost:3001/health/ready
+```
+
+Readiness returns HTTP `503` when a required dependency is unavailable.
+
+## Validation
+
+Run the same checks as CI:
+
+```bash
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+GitHub Actions runs these checks for pull requests and pushes to `main`.

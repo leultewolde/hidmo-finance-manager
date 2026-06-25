@@ -3,6 +3,7 @@ node_modules/
 .next/
 dist/
 coverage/
+*.tsbuildinfo
 
 # Local environment and credentials
 .env
@@ -23,4 +24,3 @@ coverage/
 # Logs and temporary files
 *.log
 tmp/
-

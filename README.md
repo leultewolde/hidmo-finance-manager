@@ -51,6 +51,7 @@ is documented in [docs/gcp-architecture.md](docs/gcp-architecture.md).
 ## Implementation guides
 
 - [Implementation plan](docs/implementation-plan.md)
+- [Financial formula reference](docs/financial-formulas.md)
 - [GCP beginner guide](docs/gcp-getting-started.md)
 - [Plaid beginner guide](docs/plaid-getting-started.md)
 
@@ -66,7 +67,7 @@ packages/
   config/              validated runtime configuration
   contracts/           shared request and response schemas
   database/            PostgreSQL connection utilities
-  finance-engine/      deterministic calculations (placeholder)
+  finance-engine/      deterministic financial domain and calculations
   logging/             structured, redacted logging
   plaid/               Plaid adapter boundary (placeholder)
 docs/                  product, architecture, and implementation guides

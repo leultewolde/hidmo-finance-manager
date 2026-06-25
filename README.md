@@ -53,6 +53,7 @@ is documented in [docs/gcp-architecture.md](docs/gcp-architecture.md).
 - [Implementation plan](docs/implementation-plan.md)
 - [Financial formula reference](docs/financial-formulas.md)
 - [Database workflow](docs/database-workflow.md)
+- [Firebase owner authentication](docs/firebase-authentication.md)
 - [GCP beginner guide](docs/gcp-getting-started.md)
 - [Plaid beginner guide](docs/plaid-getting-started.md)
 

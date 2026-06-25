@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
     '@hidmo/contracts',
     '@hidmo/database',
     '@hidmo/logging',
+    '@hidmo/plaid',
   ],
 }
 

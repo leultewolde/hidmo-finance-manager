@@ -209,6 +209,89 @@ li {
   line-height: 1.7;
 }
 
+.connectionsSection {
+  margin-top: 72px;
+  padding-top: 64px;
+  border-top: 1px solid #30362d;
+}
+
+.connectionsHeading,
+.connectionCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.connectionsHeading h2,
+.connectionCard h3 {
+  max-width: none;
+  margin: 12px 0 0;
+}
+
+.connectionStatus {
+  color: #a6ce78;
+}
+
+.emptyConnections,
+.connectionCard {
+  margin-top: 32px;
+  padding: 28px;
+  border: 1px solid #30362d;
+  border-radius: 18px;
+  background: rgb(255 255 255 / 2%);
+}
+
+.connectionGrid {
+  display: grid;
+  gap: 24px;
+  margin-top: 32px;
+}
+
+.connectionCardHeader h3 {
+  font-size: 1.35rem;
+}
+
+.connectionCardHeader p {
+  color: #8d9789;
+}
+
+.textButton {
+  padding: 0;
+  border: 0;
+  color: #ff9e8f;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.accountList {
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.accountList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  grid-template-columns: none;
+  gap: 24px;
+}
+
+.accountList li div {
+  display: grid;
+  gap: 6px;
+}
+
+.accountList li span {
+  color: #8d9789;
+  font-family: inherit;
+  font-size: 0.82rem;
+  letter-spacing: normal;
+  text-transform: capitalize;
+}
+
 @media (max-width: 720px) {
   main {
     width: min(100% - 28px, 1120px);
@@ -229,6 +312,11 @@ li {
   }
 
   .dashboardHeader {
+    flex-direction: column;
+  }
+
+  .connectionsHeading,
+  .connectionCardHeader {
     flex-direction: column;
   }
 }

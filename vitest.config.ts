@@ -16,6 +16,9 @@ export default defineConfig({
       '@hidmo/logging': fileURLToPath(
         new URL('./packages/logging/src/index.ts', import.meta.url),
       ),
+      '@hidmo/plaid': fileURLToPath(
+        new URL('./packages/plaid/src/index.ts', import.meta.url),
+      ),
     },
   },
   test: {

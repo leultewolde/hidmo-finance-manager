@@ -7,7 +7,11 @@ const baseEnvironment = {
   DATABASE_URL: 'postgresql://finance:finance@localhost:5432/finance_manager',
   FIREBASE_OWNER_UID: 'owner-firebase-uid',
   FIREBASE_PROJECT_ID: 'finance-manager-dev-500423',
+  LOCAL_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'),
   LOG_LEVEL: 'silent',
+  PLAID_CLIENT_ID: 'client-id',
+  PLAID_ENV: 'sandbox',
+  PLAID_SECRET: 'sandbox-secret',
 }
 
 describe('environment parsing', () => {

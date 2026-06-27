@@ -54,6 +54,7 @@ is documented in [docs/gcp-architecture.md](docs/gcp-architecture.md).
 - [Financial formula reference](docs/financial-formulas.md)
 - [Database workflow](docs/database-workflow.md)
 - [Firebase owner authentication](docs/firebase-authentication.md)
+- [Plaid Sandbox connection](docs/plaid-sandbox-connection.md)
 - [GCP beginner guide](docs/gcp-getting-started.md)
 - [Plaid beginner guide](docs/plaid-getting-started.md)
 
@@ -95,8 +96,8 @@ cp .env.example .env
 pnpm dev
 ```
 
-`pnpm dev` starts local PostgreSQL, waits for it to become healthy, and then
-starts:
+`pnpm dev` starts local PostgreSQL, waits for it to become healthy, applies
+pending database migrations, and then starts:
 
 - web application: <http://localhost:3000>
 - worker service: <http://localhost:3001>

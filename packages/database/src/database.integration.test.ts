@@ -172,6 +172,81 @@ describe('database constraints and transactions', () => {
     ).rejects.toThrow()
   })
 
+  it('persists and revokes a Plaid connection without plaintext tokens', async () => {
+    const plaidItemId = `item-${randomUUID()}`
+    const connectionId = await repositories.connections.createPlaidConnection({
+      userId: syntheticIds.user,
+      plaidItemId,
+      institutionProviderId: `institution-${randomUUID()}`,
+      institutionName: 'Integration Test Bank',
+      tokenEnvelope: {
+        encryptedAccessToken: 'encrypted-token',
+        wrappedDataKey: 'nonce.tag.wrapped-key',
+        encryptionNonce: 'token-nonce',
+        encryptionTag: 'token-tag',
+        encryptionAlgorithm: 'aes-256-gcm',
+        kmsKeyName: 'local://plaid-token-wrapping/v1',
+      },
+      accounts: [
+        {
+          providerAccountId: `account-${randomUUID()}`,
+          name: 'Integration checking',
+          mask: '4321',
+          kind: 'checking',
+          accountClass: 'asset',
+          currentBalanceMinor: 12_345n,
+          currency: 'USD',
+          balanceAsOf: '2026-06-25',
+        },
+      ],
+    })
+
+    const stored = await repositories.connections.getTokenEnvelopeForUser(
+      syntheticIds.user,
+      connectionId,
+    )
+    expect(stored).toMatchObject({
+      plaidItemId,
+      encryptedAccessToken: 'encrypted-token',
+      status: 'active',
+    })
+
+    const visible = await repositories.connections.listWithAccountsForUser(
+      syntheticIds.user,
+    )
+    expect(
+      visible.find((connection) => connection.id === connectionId),
+    ).toMatchObject({
+      institutionName: 'Integration Test Bank',
+      accounts: [
+        expect.objectContaining({
+          name: 'Integration checking',
+          currentBalanceMinor: 12_345n,
+        }),
+      ],
+    })
+
+    await repositories.connections.revokeForUser(
+      syntheticIds.user,
+      connectionId,
+    )
+    const revoked = await db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, connectionId))
+    expect(revoked[0]).toMatchObject({
+      status: 'revoked',
+      encryptedAccessToken: null,
+      wrappedDataKey: null,
+    })
+    expect(
+      await db
+        .select()
+        .from(accounts)
+        .where(eq(accounts.connectionId, connectionId)),
+    ).toHaveLength(0)
+  })
+
   it('rejects invalid ownership references', async () => {
     await expect(
       db.insert(accounts).values({

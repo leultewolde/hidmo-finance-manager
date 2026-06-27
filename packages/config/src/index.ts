@@ -11,6 +11,15 @@ const commonEnvironmentSchema = z.object({
 const webEnvironmentSchema = commonEnvironmentSchema.extend({
   FIREBASE_OWNER_UID: z.string().min(1),
   FIREBASE_PROJECT_ID: z.string().min(1),
+  LOCAL_TOKEN_ENCRYPTION_KEY: z.string().refine((value) => {
+    const decoded = Buffer.from(value, 'base64')
+    return decoded.length === 32 && decoded.toString('base64') === value
+  }, 'LOCAL_TOKEN_ENCRYPTION_KEY must be 32 base64-encoded bytes'),
+  PLAID_CLIENT_ID: z.string().min(1),
+  PLAID_ENV: z
+    .enum(['sandbox', 'development', 'production'])
+    .default('sandbox'),
+  PLAID_SECRET: z.string().min(1),
   WEB_PORT: z.coerce.number().int().positive().max(65_535).default(3000),
 })
 

@@ -1,4 +1,6 @@
-import { and, asc, eq, inArray } from 'drizzle-orm'
+import { randomUUID } from 'node:crypto'
+
+import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm'
 
 import type {
   Account,
@@ -13,6 +15,7 @@ import {
   budgetLines,
   budgets,
   connections,
+  institutions,
   liabilities,
   metricSnapshots,
   recommendations,
@@ -43,6 +46,86 @@ export class UserRepository {
       .limit(1)
     return user
   }
+
+  async ensureOwner(firebaseUid: string, email: string) {
+    return this.db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select()
+        .from(users)
+        .where(eq(users.firebaseUid, firebaseUid))
+        .limit(1)
+
+      if (existing !== undefined) {
+        if (existing.email !== email) {
+          const [updated] = await tx
+            .update(users)
+            .set({ email, updatedAt: new Date() })
+            .where(eq(users.id, existing.id))
+            .returning()
+          return updated
+        }
+        return existing
+      }
+
+      const [soleOwner] = await tx.select().from(users).limit(1)
+      if (soleOwner !== undefined) {
+        if (soleOwner.firebaseUid !== 'synthetic-owner') {
+          throw new Error(
+            'Configured Firebase owner does not match database owner',
+          )
+        }
+
+        const [updated] = await tx
+          .update(users)
+          .set({ firebaseUid, email, updatedAt: new Date() })
+          .where(eq(users.id, soleOwner.id))
+          .returning()
+        return updated
+      }
+
+      const [created] = await tx
+        .insert(users)
+        .values({ id: randomUUID(), firebaseUid, email })
+        .returning()
+      return created
+    })
+  }
+}
+
+export interface ConnectedAccountInput {
+  providerAccountId: string
+  persistentProviderAccountId?: string
+  name: string
+  mask?: string
+  kind:
+    | 'checking'
+    | 'savings'
+    | 'cash'
+    | 'brokerage'
+    | 'retirement'
+    | 'property'
+    | 'credit_card'
+    | 'personal_loan'
+    | 'auto_loan'
+    | 'student_loan'
+    | 'mortgage'
+    | 'line_of_credit'
+  accountClass: 'asset' | 'liability'
+  subtype?: string
+  currentBalanceMinor: bigint
+  availableBalanceMinor?: bigint
+  creditLimitMinor?: bigint
+  currency: 'USD' | 'EUR'
+  balanceAsOf: string
+}
+
+export interface TokenEnvelopeInput {
+  encryptedAccessToken: string
+  wrappedDataKey: string
+  encryptionNonce: string
+  encryptionTag: string
+  encryptionAlgorithm: string
+  kmsKeyName: string
 }
 
 export class ConnectionRepository {
@@ -54,6 +137,175 @@ export class ConnectionRepository {
       .from(connections)
       .where(eq(connections.userId, userId))
       .orderBy(asc(connections.id))
+  }
+
+  async listWithAccountsForUser(userId: string) {
+    const connectionRows = await this.db
+      .select({
+        id: connections.id,
+        institutionName: institutions.name,
+        status: connections.status,
+        createdAt: connections.createdAt,
+      })
+      .from(connections)
+      .leftJoin(institutions, eq(connections.institutionId, institutions.id))
+      .where(
+        and(eq(connections.userId, userId), eq(connections.status, 'active')),
+      )
+      .orderBy(asc(connections.createdAt))
+
+    const accountRows = await this.db
+      .select({
+        id: accounts.id,
+        connectionId: accounts.connectionId,
+        name: accounts.name,
+        mask: accounts.mask,
+        kind: accounts.kind,
+        currentBalanceMinor: accounts.currentBalanceMinor,
+        currency: accounts.currency,
+      })
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.userId, userId),
+          eq(accounts.active, true),
+          isNotNull(accounts.connectionId),
+        ),
+      )
+      .orderBy(asc(accounts.name))
+
+    return connectionRows.map((connection) => ({
+      ...connection,
+      institutionName: connection.institutionName ?? 'Connected institution',
+      accounts: accountRows.filter(
+        (account) => account.connectionId === connection.id,
+      ),
+    }))
+  }
+
+  async createPlaidConnection(input: {
+    userId: string
+    plaidItemId: string
+    institutionProviderId?: string
+    institutionName: string
+    consentExpiresAt?: Date
+    tokenEnvelope: TokenEnvelopeInput
+    accounts: readonly ConnectedAccountInput[]
+  }) {
+    return this.db.transaction(async (tx) => {
+      let institutionId: string | null = null
+
+      if (input.institutionProviderId !== undefined) {
+        const [existingInstitution] = await tx
+          .select()
+          .from(institutions)
+          .where(
+            eq(institutions.plaidInstitutionId, input.institutionProviderId),
+          )
+          .limit(1)
+
+        if (existingInstitution === undefined) {
+          institutionId = randomUUID()
+          await tx.insert(institutions).values({
+            id: institutionId,
+            plaidInstitutionId: input.institutionProviderId,
+            name: input.institutionName,
+          })
+        } else {
+          institutionId = existingInstitution.id
+          await tx
+            .update(institutions)
+            .set({ name: input.institutionName, updatedAt: new Date() })
+            .where(eq(institutions.id, institutionId))
+        }
+      }
+
+      const connectionId = randomUUID()
+      await tx.insert(connections).values({
+        id: connectionId,
+        userId: input.userId,
+        institutionId,
+        plaidItemId: input.plaidItemId,
+        consentExpiresAt: input.consentExpiresAt,
+        ...input.tokenEnvelope,
+      })
+
+      await tx.insert(accounts).values(
+        input.accounts.map((account) => ({
+          id: randomUUID(),
+          userId: input.userId,
+          connectionId,
+          providerAccountId: account.providerAccountId,
+          persistentProviderAccountId:
+            account.persistentProviderAccountId ?? null,
+          name: account.name,
+          mask: account.mask ?? null,
+          kind: account.kind,
+          accountClass: account.accountClass,
+          subtype: account.subtype ?? null,
+          currentBalanceMinor: account.currentBalanceMinor,
+          availableBalanceMinor: account.availableBalanceMinor ?? null,
+          creditLimitMinor: account.creditLimitMinor ?? null,
+          currency: account.currency,
+          balanceSource: 'connected' as const,
+          dataQuality: 'verified' as const,
+          balanceAsOf: account.balanceAsOf,
+          manual: false as const,
+        })),
+      )
+
+      return connectionId
+    })
+  }
+
+  async getTokenEnvelopeForUser(userId: string, connectionId: string) {
+    const [connection] = await this.db
+      .select()
+      .from(connections)
+      .where(
+        and(
+          eq(connections.id, connectionId),
+          eq(connections.userId, userId),
+          eq(connections.status, 'active'),
+        ),
+      )
+      .limit(1)
+
+    return connection
+  }
+
+  async revokeForUser(userId: string, connectionId: string) {
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(accounts)
+        .where(
+          and(
+            eq(accounts.userId, userId),
+            eq(accounts.connectionId, connectionId),
+          ),
+        )
+
+      const revoked = await tx
+        .update(connections)
+        .set({
+          status: 'revoked',
+          encryptedAccessToken: null,
+          wrappedDataKey: null,
+          encryptionNonce: null,
+          encryptionTag: null,
+          encryptionAlgorithm: null,
+          kmsKeyName: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(eq(connections.id, connectionId), eq(connections.userId, userId)),
+        )
+        .returning({ id: connections.id })
+
+      if (revoked.length !== 1) {
+        throw new Error('Connection not found for owner')
+      }
+    })
   }
 }
 

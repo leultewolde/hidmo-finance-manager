@@ -67,12 +67,12 @@ variable "worker_max_instance_count" {
 
 variable "vpc_network_self_link" {
   type        = string
-  description = "VPC self link for direct VPC egress."
+  description = "VPC resource name for direct VPC egress."
 }
 
 variable "vpc_subnetwork_self_link" {
   type        = string
-  description = "Subnet self link for direct VPC egress."
+  description = "Subnet resource name for direct VPC egress."
 }
 
 variable "web_environment" {
@@ -137,4 +137,3 @@ variable "worker_invoker_members" {
   description = "Members allowed to invoke the worker service."
   default     = []
 }
-

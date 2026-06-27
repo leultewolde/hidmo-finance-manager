@@ -155,7 +155,11 @@ export class ConnectionRepository {
       .from(connections)
       .leftJoin(institutions, eq(connections.institutionId, institutions.id))
       .where(
-        and(eq(connections.userId, userId), eq(connections.status, 'active')),
+        and(
+          eq(connections.userId, userId),
+          eq(connections.status, 'active'),
+          isNotNull(connections.encryptedAccessToken),
+        ),
       )
       .orderBy(asc(connections.createdAt))
 

@@ -486,4 +486,86 @@ describe('database constraints and transactions', () => {
       .where(eq(transactionSplits.transactionId, transactionId))
     expect(after).toEqual(before)
   })
+
+  it('removes transaction splits transactionally', async () => {
+    const transactionId = syntheticIds.transactions['loan-payment']
+    await repositories.transactions.replaceSplits(
+      syntheticIds.user,
+      transactionId,
+      [],
+    )
+    expect(
+      await db
+        .select()
+        .from(transactionSplits)
+        .where(eq(transactionSplits.transactionId, transactionId)),
+    ).toHaveLength(0)
+  })
+
+  it('preserves a user correction across provider synchronization', async () => {
+    const transactionId = syntheticIds.transactions['pending-dining']
+    await repositories.transactions.correctForUser(
+      syntheticIds.user,
+      transactionId,
+      { economicType: 'expense', category: 'Dining override' },
+    )
+
+    const [connection] = await db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, syntheticIds.connection))
+    const [account] = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.id, syntheticIds.accounts['credit-card-1']))
+    const [transaction] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, transactionId))
+
+    await repositories.transactions.applyPlaidSync({
+      userId: syntheticIds.user,
+      connectionId: syntheticIds.connection,
+      startingCursor: connection?.transactionCursor ?? null,
+      finalCursor: `correction-${randomUUID()}`,
+      added: [],
+      modified: [
+        {
+          providerTransactionId: transaction!.providerTransactionId!,
+          providerAccountId: account!.providerAccountId!,
+          postedDate: transaction!.postedDate,
+          rawProviderAmountMinor: 9_999n,
+          normalizedAmountMinor: -9_999n,
+          currency: 'USD',
+          originalDescription: 'Provider changed description',
+          state: 'posted',
+          providerCategory: 'GENERAL_MERCHANDISE',
+          economicType: 'expense',
+          appCategory: 'Provider shopping',
+          deduplicationFingerprint: transaction!.deduplicationFingerprint,
+        },
+      ],
+      removedProviderTransactionIds: [],
+    })
+
+    const [updated] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, transactionId))
+    expect(updated).toMatchObject({
+      normalizedAmountMinor: -9_999n,
+      appCategory: 'Dining override',
+      economicType: 'expense',
+      userReviewed: true,
+      classificationConfidenceBps: 10_000,
+    })
+
+    await expect(
+      repositories.transactions.correctForUser(
+        syntheticIds.user,
+        transactionId,
+        { economicType: 'income', category: 'Invalid direction' },
+      ),
+    ).rejects.toThrow('does not match transaction direction')
+  })
 })

@@ -308,6 +308,39 @@ li {
   border-top: 1px solid #30362d;
 }
 
+.classificationSummary {
+  margin-top: 72px;
+  padding-top: 64px;
+  border-top: 1px solid #30362d;
+}
+
+.classificationSummary h2 {
+  margin-top: 12px;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.summaryGrid > div {
+  display: grid;
+  gap: 10px;
+  padding: 24px;
+  border: 1px solid #30362d;
+  border-radius: 16px;
+}
+
+.summaryGrid span {
+  color: #8d9789;
+}
+
+.summaryGrid strong {
+  font-size: 1.5rem;
+}
+
 .transactionsSection h2 {
   margin-top: 12px;
 }
@@ -339,6 +372,354 @@ li {
   text-transform: none;
 }
 
+.reviewSection {
+  margin-top: 72px;
+  padding-top: 64px;
+  border-top: 1px solid #30362d;
+}
+
+.reviewSectionHeader {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.reviewSectionHeader h2 {
+  margin-top: 12px;
+}
+
+.reviewSectionHeader > div > p:last-child {
+  max-width: 620px;
+  margin: 10px 0 0;
+  color: #8d9789;
+}
+
+.queueCount {
+  flex: none;
+  padding: 8px 12px;
+  border: 1px solid #485044;
+  border-radius: 999px;
+  color: #cbd3c5;
+  font-size: 0.85rem;
+}
+
+.reviewGrid,
+.matchQueue,
+.ruleList {
+  display: grid;
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.reviewCard {
+  display: grid;
+  gap: 22px;
+  padding: 28px;
+  border: 1px solid #30362d;
+  border-radius: 16px;
+  background: rgb(255 255 255 / 2%);
+}
+
+.reviewCardHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.reviewTransaction {
+  min-width: 0;
+}
+
+.reviewTransaction h3 {
+  overflow-wrap: anywhere;
+  margin: 5px 0 0;
+  font-size: 1.15rem;
+}
+
+.reviewTransaction p,
+.ruleList p {
+  margin: 6px 0 0;
+  color: #8d9789;
+}
+
+.reviewDate {
+  color: #8d9789;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.reviewAmount {
+  flex: none;
+  font-size: 1.25rem;
+}
+
+.classificationContext {
+  display: grid;
+  grid-template-columns: 1.5fr 1.5fr 0.6fr;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #30362d;
+  border-radius: 10px;
+  background: #30362d;
+}
+
+.classificationContext > div {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  background: #171b15;
+}
+
+.classificationContext span,
+.reviewControls label {
+  color: #8d9789;
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.classificationContext strong {
+  font-size: 0.9rem;
+  text-transform: capitalize;
+}
+
+.reviewControls {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(240px, 1.3fr);
+  gap: 16px;
+}
+
+.reviewControls label {
+  display: grid;
+  gap: 7px;
+}
+
+.reviewControls select,
+.reviewControls input {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid #485044;
+  border-radius: 8px;
+  color: #f6f3eb;
+  background: #171b15;
+  font: inherit;
+}
+
+.reviewActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.unsavedBadge {
+  margin-left: auto;
+  color: #e5bd72;
+  font-size: 0.82rem;
+}
+
+.reviewFeedback {
+  margin: -4px 0 0;
+  padding: 12px 14px;
+  border: 1px solid;
+  border-radius: 9px;
+  font-weight: 600;
+}
+
+.reviewFeedback.success {
+  border-color: rgb(166 206 120 / 35%);
+  color: #a6ce78;
+  background: rgb(166 206 120 / 8%);
+}
+
+.reviewFeedback.error {
+  border-color: rgb(255 158 143 / 35%);
+  color: #ff9e8f;
+  background: rgb(255 158 143 / 8%);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 24px;
+}
+
+.pagination span {
+  min-width: 110px;
+  color: #8d9789;
+  text-align: center;
+}
+
+.reviewedHistory {
+  margin-top: 36px;
+  border: 1px solid #30362d;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 1%);
+}
+
+.reviewedHistory summary {
+  padding: 18px 20px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.reviewedHistory ul {
+  margin: 0;
+  padding: 0 20px 8px;
+  list-style: none;
+}
+
+.reviewedHistory li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 0;
+  border-top: 1px solid #30362d;
+}
+
+.reviewedHistory li div {
+  display: grid;
+  gap: 4px;
+}
+
+.reviewedHistory li span {
+  color: #8d9789;
+  font-size: 0.82rem;
+}
+
+.reviewedClassification {
+  flex: none;
+  text-transform: capitalize;
+}
+
+.modalBackdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(4 7 4 / 78%);
+  backdrop-filter: blur(5px);
+}
+
+.splitModal {
+  width: min(100%, 640px);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding: 28px;
+  border: 1px solid #485044;
+  border-radius: 18px;
+  background: #171b15;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 45%);
+}
+
+.splitModalHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.splitModalHeader h3 {
+  margin: 8px 0 0;
+}
+
+.modalClose {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #485044;
+  border-radius: 999px;
+  color: #f6f3eb;
+  background: transparent;
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.splitTotal {
+  display: flex;
+  justify-content: space-between;
+  margin: 24px 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  color: #cbd3c5;
+  background: #20251e;
+}
+
+.splitFields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.splitFields fieldset {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 18px;
+  border: 1px solid #30362d;
+  border-radius: 12px;
+}
+
+.splitFields legend {
+  padding: 0 6px;
+  font-weight: 700;
+}
+
+.splitFields label {
+  display: grid;
+  gap: 7px;
+  color: #8d9789;
+  font-size: 0.8rem;
+}
+
+.splitFields input {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid #485044;
+  border-radius: 8px;
+  color: #f6f3eb;
+  background: #10140f;
+  font: inherit;
+}
+
+.moneyInput {
+  position: relative;
+}
+
+.moneyInput span {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  color: #8d9789;
+  transform: translateY(-50%);
+}
+
+.moneyInput input {
+  padding-left: 28px;
+}
+
+.remainingAmount {
+  margin: 8px 0 0;
+  color: #8d9789;
+}
+
+.modalActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
 @media (max-width: 720px) {
   main {
     width: min(100% - 28px, 1120px);
@@ -365,5 +746,42 @@ li {
   .connectionsHeading,
   .connectionCardHeader {
     flex-direction: column;
+  }
+
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .reviewSectionHeader,
+  .reviewCardHeader {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .classificationContext,
+  .reviewControls {
+    grid-template-columns: 1fr;
+  }
+
+  .reviewAmount {
+    font-size: 1.1rem;
+  }
+
+  .unsavedBadge {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .reviewedHistory li {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .splitFields {
+    grid-template-columns: 1fr;
+  }
+
+  .splitModal {
+    padding: 22px;
   }
 }

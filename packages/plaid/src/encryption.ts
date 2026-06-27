@@ -3,6 +3,13 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 const ALGORITHM = 'aes-256-gcm'
 const LOCAL_KEY_NAME = 'local://plaid-token-wrapping/v1'
 
+export class TokenDecryptionError extends Error {
+  constructor() {
+    super('The stored Plaid token could not be decrypted')
+    this.name = 'TOKEN_DECRYPTION_FAILED'
+  }
+}
+
 export interface TokenEnvelope {
   encryptedAccessToken: string
   wrappedDataKey: string
@@ -88,18 +95,24 @@ export function decryptAccessToken(
     throw new Error('Invalid wrapped data key')
   }
 
-  const dataKey = decryptAesGcm(
-    Buffer.from(wrappedCiphertext, 'base64'),
-    wrappingKey,
-    Buffer.from(wrappedNonce, 'base64'),
-    Buffer.from(wrappedTag, 'base64'),
-  )
-  const plaintext = decryptAesGcm(
-    Buffer.from(envelope.encryptedAccessToken, 'base64'),
-    dataKey,
-    Buffer.from(envelope.encryptionNonce, 'base64'),
-    Buffer.from(envelope.encryptionTag, 'base64'),
-  )
+  let dataKey: Buffer
+  let plaintext: Buffer
+  try {
+    dataKey = decryptAesGcm(
+      Buffer.from(wrappedCiphertext, 'base64'),
+      wrappingKey,
+      Buffer.from(wrappedNonce, 'base64'),
+      Buffer.from(wrappedTag, 'base64'),
+    )
+    plaintext = decryptAesGcm(
+      Buffer.from(envelope.encryptedAccessToken, 'base64'),
+      dataKey,
+      Buffer.from(envelope.encryptionNonce, 'base64'),
+      Buffer.from(envelope.encryptionTag, 'base64'),
+    )
+  } catch {
+    throw new TokenDecryptionError()
+  }
 
   return plaintext.toString('utf8')
 }

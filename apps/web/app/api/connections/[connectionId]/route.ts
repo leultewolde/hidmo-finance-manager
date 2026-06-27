@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 import { createLogger } from '@hidmo/logging'
+import { TokenDecryptionError } from '@hidmo/plaid'
 
 import {
   getLocalTokenWrappingKey,
@@ -14,6 +15,7 @@ import {
   hasSameOrigin,
   hasValidCsrfToken,
 } from '../../../../lib/request-security'
+import { plaidErrorCode } from '../../../../lib/transaction-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,12 +58,17 @@ export async function DELETE(
     if (error instanceof AuthFailure) {
       return NextResponse.json({ error: error.code }, { status: error.status })
     }
+    const code =
+      error instanceof TokenDecryptionError ? error.name : plaidErrorCode(error)
     logger.error(
-      { errorName: error instanceof Error ? error.name : 'UnknownError' },
+      {
+        errorCode: code,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      },
       'Plaid connection disconnection failed',
     )
     return NextResponse.json(
-      { error: 'connection-disconnection-failed' },
+      { error: 'connection-disconnection-failed', code },
       { status: 502 },
     )
   }

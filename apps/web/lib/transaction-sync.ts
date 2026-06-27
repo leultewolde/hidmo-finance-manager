@@ -66,7 +66,7 @@ interface SyncRepositories {
   }
 }
 
-function plaidErrorCode(error: unknown): string {
+export function plaidErrorCode(error: unknown): string {
   if (
     typeof error === 'object' &&
     error !== null &&
@@ -80,6 +80,12 @@ function plaidErrorCode(error: unknown): string {
     typeof error.response.data.error_code === 'string'
   ) {
     return error.response.data.error_code
+  }
+  if (
+    error instanceof Error &&
+    error.message === 'Connection not found for owner'
+  ) {
+    return 'CONNECTION_NOT_FOUND'
   }
   return error instanceof Error ? error.name : 'UNKNOWN_SYNC_ERROR'
 }

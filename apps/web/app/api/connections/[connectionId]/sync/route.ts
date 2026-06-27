@@ -9,11 +9,13 @@ import {
   requireDatabaseOwner,
 } from '../../../../../lib/application-services'
 import { AuthFailure, CSRF_COOKIE_NAME } from '../../../../../lib/auth-policy'
+import { refreshClassifications } from '../../../../../lib/classification-service'
 import {
   hasSameOrigin,
   hasValidCsrfToken,
 } from '../../../../../lib/request-security'
 import {
+  plaidErrorCode,
   SyncAlreadyRunningError,
   synchronizePlaidConnection,
 } from '../../../../../lib/transaction-sync'
@@ -52,9 +54,16 @@ export async function POST(
       repositories,
       wrappingKey: getLocalTokenWrappingKey(),
     })
+    const classification = await refreshClassifications(
+      databaseOwner.id,
+      repositories,
+    )
 
-    logger.info({ connectionId, ...result }, 'Plaid transactions synchronized')
-    return NextResponse.json(result)
+    logger.info(
+      { connectionId, ...result, ...classification },
+      'Plaid transactions synchronized',
+    )
+    return NextResponse.json({ ...result, ...classification })
   } catch (error) {
     if (error instanceof AuthFailure) {
       return NextResponse.json({ error: error.code }, { status: error.status })
@@ -66,12 +75,16 @@ export async function POST(
       )
     }
 
+    const code = plaidErrorCode(error)
     logger.error(
-      { errorName: error instanceof Error ? error.name : 'UnknownError' },
+      {
+        errorCode: code,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      },
       'Plaid transaction synchronization failed',
     )
     return NextResponse.json(
-      { error: 'transaction-sync-failed' },
+      { error: 'transaction-sync-failed', code },
       { status: 502 },
     )
   }

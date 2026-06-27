@@ -9,9 +9,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hidmo/classification": "workspace:*",
     "@hidmo/config": "workspace:*",
     "@hidmo/contracts": "workspace:*",
     "@hidmo/database": "workspace:*",
+    "@hidmo/finance-engine": "workspace:*",
     "@hidmo/logging": "workspace:*",
     "@hidmo/plaid": "workspace:*",
     "firebase": "12.6.0",

@@ -44,6 +44,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@hidmo/classification':
+        specifier: workspace:*
+        version: link:../../packages/classification
       '@hidmo/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -53,6 +56,9 @@ importers:
       '@hidmo/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@hidmo/finance-engine':
+        specifier: workspace:*
+        version: link:../../packages/finance-engine
       '@hidmo/logging':
         specifier: workspace:*
         version: link:../../packages/logging
@@ -118,7 +124,11 @@ importers:
 
   packages/ai: {}
 
-  packages/classification: {}
+  packages/classification:
+    dependencies:
+      '@hidmo/finance-engine':
+        specifier: workspace:*
+        version: link:../finance-engine
 
   packages/config:
     dependencies:

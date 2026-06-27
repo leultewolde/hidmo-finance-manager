@@ -12,7 +12,9 @@ import { hasSameOrigin } from '../../../../lib/request-security'
 export const dynamic = 'force-dynamic'
 
 export function POST(request: NextRequest) {
-  if (!hasSameOrigin(request.url, request.headers.get('origin'))) {
+  if (
+    !hasSameOrigin(request.url, request.headers.get('origin'), request.headers)
+  ) {
     return NextResponse.json({ error: 'invalid-origin' }, { status: 403 })
   }
 

@@ -16,6 +16,26 @@ export function hasValidCsrfToken(
   return timingSafeEqual(Buffer.from(cookieToken), Buffer.from(submittedToken))
 }
 
-export function hasSameOrigin(requestUrl: string, origin: string | null) {
-  return origin !== null && new URL(requestUrl).origin === origin
+export function hasSameOrigin(
+  requestUrl: string,
+  origin: string | null,
+  headers?: Headers,
+) {
+  if (origin === null) {
+    return false
+  }
+
+  const requestOrigin = new URL(requestUrl).origin
+  if (requestOrigin === origin) {
+    return true
+  }
+
+  const forwardedHost = headers?.get('x-forwarded-host')
+  const forwardedProto = headers?.get('x-forwarded-proto') ?? 'https'
+
+  if (forwardedHost === null || forwardedHost === undefined) {
+    return false
+  }
+
+  return `${forwardedProto}://${forwardedHost}` === origin
 }

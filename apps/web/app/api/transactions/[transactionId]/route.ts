@@ -23,7 +23,13 @@ export async function PATCH(
   context: { params: Promise<{ transactionId: string }> },
 ) {
   try {
-    if (!hasSameOrigin(request.url, request.headers.get('origin'))) {
+    if (
+      !hasSameOrigin(
+        request.url,
+        request.headers.get('origin'),
+        request.headers,
+      )
+    ) {
       return NextResponse.json({ error: 'invalid-origin' }, { status: 403 })
     }
     const body = (await request.json()) as Record<string, unknown>

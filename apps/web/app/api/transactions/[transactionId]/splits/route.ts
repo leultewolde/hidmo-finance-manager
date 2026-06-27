@@ -29,7 +29,11 @@ async function replace(
   const csrfToken =
     typeof body.csrfToken === 'string' ? body.csrfToken : undefined
   if (
-    !hasSameOrigin(request.url, request.headers.get('origin')) ||
+    !hasSameOrigin(
+      request.url,
+      request.headers.get('origin'),
+      request.headers,
+    ) ||
     !hasValidCsrfToken(request.cookies.get(CSRF_COOKIE_NAME)?.value, csrfToken)
   ) {
     return NextResponse.json({ error: 'invalid-request' }, { status: 403 })

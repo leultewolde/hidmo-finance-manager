@@ -7,13 +7,19 @@ on:
     paths:
       - '.github/workflows/terraform-plan.yml'
       - 'infra/**'
+  pull_request_target:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/terraform-plan.yml'
+      - 'infra/**'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: terraform-plan-dev-${{ github.ref }}
+  group: terraform-plan-dev-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -35,7 +41,9 @@ env:
 jobs:
   disabled:
     name: Terraform plan disabled
-    if: github.event_name == 'push' && vars.TERRAFORM_PLAN_ENABLED != 'true'
+    if: |
+      (github.event_name == 'push' && vars.TERRAFORM_PLAN_ENABLED != 'true') ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name == github.repository && (vars.TERRAFORM_PLAN_ENABLED != 'true' || vars.TERRAFORM_PR_PLAN_ENABLED != 'true'))
     runs-on: ubuntu-latest
     steps:
       - name: Explain skipped plan
@@ -45,12 +53,31 @@ jobs:
             echo
             echo "Set repository variable \`TERRAFORM_PLAN_ENABLED=true\` after migrating Terraform state to GCS."
             echo
+            echo "Set repository variable \`TERRAFORM_PR_PLAN_ENABLED=true\` to run plan-only checks on same-repository pull requests."
+            echo
             echo "This workflow intentionally runs \`terraform plan\` only. It never runs \`terraform apply\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  skipped-fork:
+    name: Terraform plan skipped for fork
+    if: github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain skipped fork plan
+        run: |
+          {
+            echo "## Terraform plan skipped"
+            echo
+            echo "Terraform plan requires access to the remote state backend."
+            echo "For security, this workflow only runs remote-state Terraform plans for branches in this repository."
           } >> "$GITHUB_STEP_SUMMARY"
 
   plan:
     name: Terraform plan dev
-    if: github.event_name == 'workflow_dispatch' || vars.TERRAFORM_PLAN_ENABLED == 'true'
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && vars.TERRAFORM_PLAN_ENABLED == 'true') ||
+      (github.event_name == 'pull_request_target' && vars.TERRAFORM_PLAN_ENABLED == 'true' && vars.TERRAFORM_PR_PLAN_ENABLED == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -59,7 +86,15 @@ jobs:
       id-token: write
 
     steps:
+      - name: Check out pull request branch
+        if: github.event_name == 'pull_request_target'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
       - name: Check out repository
+        if: github.event_name != 'pull_request_target'
         uses: actions/checkout@v4
 
       - name: Validate required repository variables

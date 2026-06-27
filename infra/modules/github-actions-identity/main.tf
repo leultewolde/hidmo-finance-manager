@@ -17,13 +17,14 @@ resource "google_iam_workload_identity_pool_provider" "this" {
   attribute_mapping = {
     "google.subject"             = "assertion.sub"
     "attribute.actor"            = "assertion.actor"
+    "attribute.event_name"       = "assertion.event_name"
+    "attribute.ref"              = "assertion.ref"
     "attribute.repository"       = "assertion.repository"
     "attribute.repository_owner" = "assertion.repository_owner"
-    "attribute.ref"              = "assertion.ref"
     "attribute.workflow"         = "assertion.workflow"
   }
 
-  attribute_condition = "assertion.repository == '${var.github_repository}' && assertion.ref == '${var.github_ref}'"
+  attribute_condition = "assertion.repository == '${var.github_repository}' && (assertion.ref == '${var.github_ref}' || assertion.event_name == 'pull_request_target')"
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"

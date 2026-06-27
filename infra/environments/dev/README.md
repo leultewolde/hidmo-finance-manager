@@ -507,6 +507,7 @@ GitHub repository
 
 ```text
 TERRAFORM_PLAN_ENABLED=true
+TERRAFORM_PR_PLAN_ENABLED=false
 GCP_WORKLOAD_IDENTITY_PROVIDER=<terraform output>
 GCP_TERRAFORM_PLAN_SERVICE_ACCOUNT=<terraform output>
 TERRAFORM_STATE_BUCKET=<terraform output>
@@ -527,6 +528,9 @@ The `Terraform Plan` workflow:
 
 - authenticates through Workload Identity Federation;
 - uses the GCS backend;
+- runs on `main` pushes and, after explicitly enabled, same-repository pull
+  requests that touch `infra/**`;
+- skips fork pull requests because plan requires remote-state access;
 - runs `terraform init`, `terraform validate`, and `terraform plan`;
 - never runs `terraform apply`;
 - reports whether pending infrastructure changes exist.
@@ -539,6 +543,17 @@ GitHub repository
 → Run workflow
 
 Run it from `main` after state migration.
+
+After the Workload Identity provider update that allows
+`pull_request_target` is applied, enable same-repository pull request plans by
+changing the repository variable:
+
+```text
+TERRAFORM_PR_PLAN_ENABLED=true
+```
+
+Do not enable remote-state plans for fork pull requests. Terraform state is
+sensitive operational data and should not be exposed to untrusted workflow code.
 
 ## Important notes
 

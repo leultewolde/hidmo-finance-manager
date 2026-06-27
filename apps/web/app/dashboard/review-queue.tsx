@@ -33,6 +33,8 @@ interface RuleView {
   economicType: string
 }
 
+const PAGE_SIZE = 10
+
 async function csrfToken() {
   const response = await fetch('/api/auth/csrf', {
     cache: 'no-store',
@@ -47,8 +49,10 @@ async function csrfToken() {
 
 function TransactionEditor({
   transaction,
+  onReviewed,
 }: {
   transaction: ReviewTransaction
+  onReviewed: (transaction: ReviewTransaction) => void
 }) {
   const [economicType, setEconomicType] = useState(transaction.economicType)
   const [category, setCategory] = useState(transaction.category)
@@ -58,6 +62,13 @@ function TransactionEditor({
     category: transaction.category,
   })
   const [splitCount, setSplitCount] = useState(transaction.splitCount)
+  const [splitOpen, setSplitOpen] = useState(false)
+  const [firstSplitCategory, setFirstSplitCategory] = useState('')
+  const [firstSplitAmount, setFirstSplitAmount] = useState('')
+  const [secondSplitCategory, setSecondSplitCategory] = useState(
+    transaction.category,
+  )
+  const [splitError, setSplitError] = useState('')
   const [feedback, setFeedback] = useState<{
     kind: 'success' | 'error'
     message: string
@@ -68,6 +79,16 @@ function TransactionEditor({
 
   function errorMessage(error: unknown, fallback: string) {
     return error instanceof Error ? error.message : fallback
+  }
+
+  function remainingSplitAmount() {
+    const entered = Number(firstSplitAmount)
+    const total = Math.abs(Number(transaction.amountMinor)) / 100
+    if (!Number.isFinite(entered) || entered <= 0) return '—'
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: transaction.currency,
+    }).format(Math.max(total - entered, 0))
   }
 
   async function save() {
@@ -101,6 +122,16 @@ function TransactionEditor({
         kind: 'success',
         message: 'Applied. This transaction is now reviewed.',
       })
+      window.setTimeout(
+        () =>
+          onReviewed({
+            ...transaction,
+            economicType,
+            category: normalizedCategory,
+            reviewed: true,
+          }),
+        900,
+      )
     } catch (error) {
       setFeedback({
         kind: 'error',
@@ -146,25 +177,24 @@ function TransactionEditor({
     }
   }
 
-  async function split() {
+  function openSplit() {
     setFeedback(null)
-    const firstCategory = window.prompt('First split category')
-    if (firstCategory === null) return
-    if (firstCategory.trim() === '') {
-      setFeedback({
-        kind: 'error',
-        message: 'The first split category is required.',
-      })
+    setSplitError('')
+    setFirstSplitCategory('')
+    setFirstSplitAmount('')
+    setSecondSplitCategory(category)
+    setSplitOpen(true)
+  }
+
+  async function saveSplit() {
+    setSplitError('')
+    const cents = Math.round(Number(firstSplitAmount) * 100)
+    if (firstSplitCategory.trim() === '') {
+      setSplitError('Enter a category for the first split.')
       return
     }
-    const firstAmount = window.prompt('First split amount in dollars')
-    if (firstAmount === null) return
-    const cents = Math.round(Number(firstAmount) * 100)
     if (!Number.isFinite(cents) || cents <= 0) {
-      setFeedback({
-        kind: 'error',
-        message: 'Enter a positive dollar amount, such as 20 or 20.50.',
-      })
+      setSplitError('Enter a positive amount, such as 20 or 20.50.')
       return
     }
 
@@ -176,20 +206,11 @@ function TransactionEditor({
       (total < 0n && remainder > 0n) ||
       (total > 0n && remainder < 0n)
     ) {
-      setFeedback({
-        kind: 'error',
-        message: 'The first split must be smaller than the transaction total.',
-      })
+      setSplitError('The first split must be smaller than the total.')
       return
     }
-    const secondCategory =
-      window.prompt('Second split category', transaction.category) ??
-      transaction.category
-    if (secondCategory.trim() === '') {
-      setFeedback({
-        kind: 'error',
-        message: 'The second split category is required.',
-      })
+    if (secondSplitCategory.trim() === '') {
+      setSplitError('Enter a category for the remaining amount.')
       return
     }
 
@@ -207,12 +228,12 @@ function TransactionEditor({
               {
                 amountMinor: signedFirst.toString(),
                 economicType,
-                category: firstCategory.trim(),
+                category: firstSplitCategory.trim(),
               },
               {
                 amountMinor: remainder.toString(),
                 economicType,
-                category: secondCategory.trim(),
+                category: secondSplitCategory.trim(),
               },
             ],
           }),
@@ -227,11 +248,9 @@ function TransactionEditor({
         message: 'Applied. The transaction is split into two categories.',
       })
       setSplitCount(2)
+      setSplitOpen(false)
     } catch (error) {
-      setFeedback({
-        kind: 'error',
-        message: errorMessage(error, 'The split could not be saved.'),
-      })
+      setSplitError(errorMessage(error, 'The split could not be saved.'))
     } finally {
       setWorking(false)
     }
@@ -368,7 +387,7 @@ function TransactionEditor({
         <button
           className="textButton"
           disabled={working}
-          onClick={split}
+          onClick={openSplit}
           type="button"
         >
           Split
@@ -394,19 +413,159 @@ function TransactionEditor({
           {feedback.message}
         </p>
       )}
+      {splitOpen ? (
+        <div className="modalBackdrop">
+          <section
+            aria-labelledby={`split-title-${transaction.id}`}
+            aria-modal="true"
+            className="splitModal"
+            role="dialog"
+          >
+            <div className="splitModalHeader">
+              <div>
+                <p className="sectionLabel">Split transaction</p>
+                <h3 id={`split-title-${transaction.id}`}>
+                  {transaction.merchant}
+                </h3>
+              </div>
+              <button
+                aria-label="Close split editor"
+                className="modalClose"
+                disabled={working}
+                onClick={() => setSplitOpen(false)}
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+            <p className="splitTotal">
+              Transaction total{' '}
+              <strong>
+                {new Intl.NumberFormat('en-US', {
+                  style: 'currency',
+                  currency: transaction.currency,
+                }).format(Math.abs(Number(transaction.amountMinor)) / 100)}
+              </strong>
+            </p>
+            <div className="splitFields">
+              <fieldset>
+                <legend>First split</legend>
+                <label>
+                  Category
+                  <input
+                    autoFocus
+                    disabled={working}
+                    onChange={(event) =>
+                      setFirstSplitCategory(event.target.value)
+                    }
+                    placeholder="e.g. Groceries"
+                    value={firstSplitCategory}
+                  />
+                </label>
+                <label>
+                  Amount
+                  <div className="moneyInput">
+                    <span>$</span>
+                    <input
+                      disabled={working}
+                      inputMode="decimal"
+                      onChange={(event) =>
+                        setFirstSplitAmount(event.target.value)
+                      }
+                      placeholder="0.00"
+                      value={firstSplitAmount}
+                    />
+                  </div>
+                </label>
+              </fieldset>
+              <fieldset>
+                <legend>Remaining split</legend>
+                <label>
+                  Category
+                  <input
+                    disabled={working}
+                    onChange={(event) =>
+                      setSecondSplitCategory(event.target.value)
+                    }
+                    value={secondSplitCategory}
+                  />
+                </label>
+                <p className="remainingAmount">
+                  Remaining: <strong>{remainingSplitAmount()}</strong>
+                </p>
+              </fieldset>
+            </div>
+            {splitError === '' ? null : (
+              <p className="reviewFeedback error" role="alert">
+                {splitError}
+              </p>
+            )}
+            <div className="modalActions">
+              <button
+                className="textButton"
+                disabled={working}
+                onClick={() => setSplitOpen(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="primaryButton"
+                disabled={working}
+                onClick={saveSplit}
+                type="button"
+              >
+                {working ? 'Saving split…' : 'Save split'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </article>
   )
 }
 
 export function ReviewQueue({
   transactions,
+  reviewedTransactions,
   matches,
   rules,
 }: {
   transactions: ReviewTransaction[]
+  reviewedTransactions: ReviewTransaction[]
   matches: MatchView[]
   rules: RuleView[]
 }) {
+  const [page, setPage] = useState(1)
+  const [handledIds, setHandledIds] = useState<string[]>([])
+  const [recentlyReviewed, setRecentlyReviewed] = useState<ReviewTransaction[]>(
+    [],
+  )
+  const activeTransactions = transactions.filter(
+    (transaction) => !handledIds.includes(transaction.id),
+  )
+  const pageCount = Math.max(
+    1,
+    Math.ceil(activeTransactions.length / PAGE_SIZE),
+  )
+  const currentPage = Math.min(page, pageCount)
+  const pageTransactions = activeTransactions.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  )
+  const reviewedHistory = [
+    ...recentlyReviewed,
+    ...reviewedTransactions.filter(
+      (transaction) =>
+        !recentlyReviewed.some((recent) => recent.id === transaction.id),
+    ),
+  ]
+
+  function markReviewed(transaction: ReviewTransaction) {
+    setHandledIds((ids) => [...ids, transaction.id])
+    setRecentlyReviewed((reviewed) => [transaction, ...reviewed])
+  }
+
   async function reviewMatch(matchId: string, decision: 'accept' | 'reject') {
     const token = await csrfToken()
     const response = await fetch(`/api/transfer-matches/${matchId}`, {
@@ -434,22 +593,72 @@ export function ReviewQueue({
           <p className="sectionLabel">Human review</p>
           <h2>Classification queue</h2>
           <p>
-            Review low-confidence transactions. Applied corrections remain
-            visible until you refresh.
+            Only low-confidence, unreviewed transactions appear here. Applied
+            corrections move to reviewed history.
           </p>
         </div>
         <strong className="queueCount">
-          {transactions.length} {transactions.length === 1 ? 'item' : 'items'}
+          {activeTransactions.length}{' '}
+          {activeTransactions.length === 1 ? 'item' : 'items'}
         </strong>
       </div>
-      {transactions.length === 0 ? (
-        <p className="emptyConnections">No uncertain transactions.</p>
+      {activeTransactions.length === 0 ? (
+        <p className="emptyConnections">No transactions need review.</p>
       ) : (
-        <div className="reviewGrid">
-          {transactions.map((transaction) => (
-            <TransactionEditor key={transaction.id} transaction={transaction} />
-          ))}
-        </div>
+        <>
+          <div className="reviewGrid">
+            {pageTransactions.map((transaction) => (
+              <TransactionEditor
+                key={transaction.id}
+                onReviewed={markReviewed}
+                transaction={transaction}
+              />
+            ))}
+          </div>
+          <nav aria-label="Classification queue pages" className="pagination">
+            <button
+              className="secondaryButton"
+              disabled={currentPage === 1}
+              onClick={() => setPage((value) => Math.max(1, value - 1))}
+              type="button"
+            >
+              Previous
+            </button>
+            <span>
+              Page {currentPage} of {pageCount}
+            </span>
+            <button
+              className="secondaryButton"
+              disabled={currentPage === pageCount}
+              onClick={() => setPage((value) => Math.min(pageCount, value + 1))}
+              type="button"
+            >
+              Next
+            </button>
+          </nav>
+        </>
+      )}
+
+      {reviewedHistory.length === 0 ? null : (
+        <details className="reviewedHistory">
+          <summary>Reviewed transactions ({reviewedHistory.length})</summary>
+          <ul>
+            {reviewedHistory.map((transaction) => (
+              <li key={transaction.id}>
+                <div>
+                  <strong>{transaction.merchant}</strong>
+                  <span>
+                    {transaction.postedDate} · {transaction.accountName}
+                  </span>
+                </div>
+                <span className="reviewedClassification">
+                  {transaction.economicType.replaceAll('_', ' ')} ·{' '}
+                  {transaction.category}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       {matches.length === 0 ? null : (

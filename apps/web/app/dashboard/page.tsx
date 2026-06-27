@@ -234,6 +234,26 @@ export default async function DashboardPage() {
             economicType: rule.economicType,
           }
         })}
+        reviewedTransactions={transactionRows
+          .filter((transaction) => transaction.reviewed)
+          .map((transaction) => ({
+            id: transaction.id,
+            merchant:
+              transaction.merchantName ??
+              transaction.description ??
+              transaction.accountName,
+            accountName: transaction.accountName,
+            accountMask: transaction.accountMask,
+            postedDate: transaction.postedDate,
+            amountMinor: transaction.normalizedAmountMinor.toString(),
+            currency: transaction.currency,
+            economicType: transaction.economicType,
+            category: transaction.category,
+            providerCategory: transaction.providerCategory,
+            confidenceBps: transaction.confidenceBps,
+            reviewed: transaction.reviewed,
+            splitCount: splitCounts.get(transaction.id) ?? 0,
+          }))}
         transactions={transactionRows
           .filter(
             (transaction) =>

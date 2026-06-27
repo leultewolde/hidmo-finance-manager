@@ -308,6 +308,39 @@ li {
   border-top: 1px solid #30362d;
 }
 
+.classificationSummary {
+  margin-top: 72px;
+  padding-top: 64px;
+  border-top: 1px solid #30362d;
+}
+
+.classificationSummary h2 {
+  margin-top: 12px;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.summaryGrid > div {
+  display: grid;
+  gap: 10px;
+  padding: 24px;
+  border: 1px solid #30362d;
+  border-radius: 16px;
+}
+
+.summaryGrid span {
+  color: #8d9789;
+}
+
+.summaryGrid strong {
+  font-size: 1.5rem;
+}
+
 .transactionsSection h2 {
   margin-top: 12px;
 }
@@ -339,6 +372,57 @@ li {
   text-transform: none;
 }
 
+.reviewSection {
+  margin-top: 72px;
+  padding-top: 64px;
+  border-top: 1px solid #30362d;
+}
+
+.reviewSection h2 {
+  margin-top: 12px;
+}
+
+.reviewGrid,
+.matchQueue,
+.ruleList {
+  display: grid;
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.reviewCard {
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+  border: 1px solid #30362d;
+  border-radius: 16px;
+  background: rgb(255 255 255 / 2%);
+}
+
+.reviewCard p,
+.ruleList p {
+  margin: 6px 0 0;
+  color: #8d9789;
+}
+
+.reviewControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.reviewControls select,
+.reviewControls input {
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid #485044;
+  border-radius: 8px;
+  color: #f6f3eb;
+  background: #171b15;
+  font: inherit;
+}
+
 @media (max-width: 720px) {
   main {
     width: min(100% - 28px, 1120px);
@@ -365,5 +449,9 @@ li {
   .connectionsHeading,
   .connectionCardHeader {
     flex-direction: column;
+  }
+
+  .summaryGrid {
+    grid-template-columns: 1fr;
   }
 }

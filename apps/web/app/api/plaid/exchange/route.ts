@@ -9,6 +9,7 @@ import {
   requireDatabaseOwner,
 } from '../../../../lib/application-services'
 import { AuthFailure, CSRF_COOKIE_NAME } from '../../../../lib/auth-policy'
+import { refreshClassifications } from '../../../../lib/classification-service'
 import { connectPlaidItem } from '../../../../lib/plaid-connections'
 import {
   hasSameOrigin,
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest) {
         repositories,
         wrappingKey: getLocalTokenWrappingKey(),
       })
+      await refreshClassifications(databaseOwner.id, repositories)
     } catch {
       initialSync = 'retry_available'
     }

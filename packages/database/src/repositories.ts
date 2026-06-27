@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm'
 
 import type {
   Account,
@@ -12,8 +12,10 @@ import { assertTransactionSplits } from '@hidmo/finance-engine'
 import type { Database } from './client.js'
 import {
   accounts,
+  auditEvents,
   budgetLines,
   budgets,
+  classificationRules,
   connections,
   institutions,
   liabilities,
@@ -421,7 +423,11 @@ export class TransactionRepository {
         normalizedAmountMinor: transactions.normalizedAmountMinor,
         currency: transactions.currency,
         state: transactions.state,
+        economicType: transactions.economicType,
         category: transactions.appCategory,
+        providerCategory: transactions.providerCategory,
+        confidenceBps: transactions.classificationConfidenceBps,
+        reviewed: transactions.userReviewed,
       })
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
@@ -626,21 +632,23 @@ export class TransactionRepository {
         throw new Error('Transaction not found for owner')
       }
 
-      assertTransactionSplits(
-        {
-          id: row.id,
-          accountId: row.accountId,
-          postedDate: row.postedDate,
-          amountMinor: row.normalizedAmountMinor,
-          currency: row.currency,
-          direction: row.normalizedAmountMinor >= 0n ? 'inflow' : 'outflow',
-          economicType: row.economicType,
-          category: row.appCategory,
-          state: row.state,
-          reviewed: row.userReviewed,
-        },
-        splits,
-      )
+      if (splits.length > 0) {
+        assertTransactionSplits(
+          {
+            id: row.id,
+            accountId: row.accountId,
+            postedDate: row.postedDate,
+            amountMinor: row.normalizedAmountMinor,
+            currency: row.currency,
+            direction: row.normalizedAmountMinor >= 0n ? 'inflow' : 'outflow',
+            economicType: row.economicType,
+            category: row.appCategory,
+            state: row.state,
+            reviewed: row.userReviewed,
+          },
+          splits,
+        )
+      }
 
       await tx
         .delete(transactionSplits)
@@ -663,6 +671,134 @@ export class TransactionRepository {
           })),
         )
       }
+
+      await tx
+        .update(transactions)
+        .set({
+          userReviewed: true,
+          classificationConfidenceBps: 10_000,
+          updatedAt: new Date(),
+        })
+        .where(eq(transactions.id, transactionId))
+      await tx.delete(metricSnapshots).where(eq(metricSnapshots.userId, userId))
+      await tx.insert(auditEvents).values({
+        id: randomUUID(),
+        userId,
+        actor: 'owner',
+        action:
+          splits.length === 0
+            ? 'transaction.splits.removed'
+            : 'transaction.splits.replaced',
+        targetType: 'transaction',
+        targetId: transactionId,
+        metadata: { splitCount: splits.length },
+      })
+    })
+  }
+
+  async correctForUser(
+    userId: string,
+    transactionId: string,
+    input: {
+      economicType:
+        | PlaidTransactionInput['economicType']
+        | 'transfer'
+        | 'debt_payment'
+        | 'adjustment'
+      category: string
+    },
+  ) {
+    await this.db.transaction(async (tx) => {
+      const updated = await tx
+        .update(transactions)
+        .set({
+          economicType: input.economicType,
+          appCategory: input.category,
+          userReviewed: true,
+          classificationConfidenceBps: 10_000,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(transactions.id, transactionId),
+            eq(transactions.userId, userId),
+            eq(transactions.removed, false),
+          ),
+        )
+        .returning({ id: transactions.id })
+      if (updated.length !== 1) {
+        throw new Error('Transaction not found for owner')
+      }
+
+      await tx.delete(metricSnapshots).where(eq(metricSnapshots.userId, userId))
+      await tx.insert(auditEvents).values({
+        id: randomUUID(),
+        userId,
+        actor: 'owner',
+        action: 'transaction.classification.corrected',
+        targetType: 'transaction',
+        targetId: transactionId,
+        metadata: {
+          economicType: input.economicType,
+          category: input.category,
+        },
+      })
+    })
+  }
+
+  async listForClassification(userId: string) {
+    return this.db
+      .select({
+        id: transactions.id,
+        accountId: transactions.accountId,
+        accountClass: accounts.accountClass,
+        postedDate: transactions.postedDate,
+        amountMinor: transactions.normalizedAmountMinor,
+        merchantName: transactions.merchantName,
+        description: transactions.originalDescription,
+        providerCategory: transactions.providerCategory,
+        economicType: transactions.economicType,
+        category: transactions.appCategory,
+        reviewed: transactions.userReviewed,
+        removed: transactions.removed,
+      })
+      .from(transactions)
+      .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+      .where(eq(transactions.userId, userId))
+  }
+
+  async applyClassificationSuggestions(
+    userId: string,
+    decisions: readonly {
+      transactionId: string
+      economicType:
+        | PlaidTransactionInput['economicType']
+        | 'transfer'
+        | 'debt_payment'
+        | 'adjustment'
+      category: string
+      confidenceBps: number
+    }[],
+  ) {
+    await this.db.transaction(async (tx) => {
+      for (const decision of decisions) {
+        await tx
+          .update(transactions)
+          .set({
+            economicType: decision.economicType,
+            appCategory: decision.category,
+            classificationConfidenceBps: decision.confidenceBps,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(transactions.id, decision.transactionId),
+              eq(transactions.userId, userId),
+              eq(transactions.userReviewed, false),
+            ),
+          )
+      }
+      await tx.delete(metricSnapshots).where(eq(metricSnapshots.userId, userId))
     })
   }
 }
@@ -723,6 +859,291 @@ export class TransferRepository {
       .values(input)
       .returning()
     return created
+  }
+
+  async refreshCandidates(
+    userId: string,
+    candidates: readonly {
+      transactionOutId: string
+      transactionInId: string
+      scoreBps: number
+      method: 'internal_transfer' | 'credit_card_payment'
+      autoAccept: boolean
+    }[],
+  ) {
+    await this.db.transaction(async (tx) => {
+      for (const candidate of candidates) {
+        const [existing] = await tx
+          .select()
+          .from(transferMatches)
+          .where(
+            and(
+              eq(transferMatches.userId, userId),
+              or(
+                and(
+                  eq(
+                    transferMatches.transactionOutId,
+                    candidate.transactionOutId,
+                  ),
+                  eq(
+                    transferMatches.transactionInId,
+                    candidate.transactionInId,
+                  ),
+                ),
+                and(
+                  eq(
+                    transferMatches.transactionOutId,
+                    candidate.transactionInId,
+                  ),
+                  eq(
+                    transferMatches.transactionInId,
+                    candidate.transactionOutId,
+                  ),
+                ),
+              ),
+            ),
+          )
+          .limit(1)
+        if (existing !== undefined) continue
+
+        const status = candidate.autoAccept ? 'accepted' : 'candidate'
+        await tx.insert(transferMatches).values({
+          id: randomUUID(),
+          userId,
+          transactionOutId: candidate.transactionOutId,
+          transactionInId: candidate.transactionInId,
+          scoreBps: candidate.scoreBps,
+          status,
+          method: candidate.method,
+          reviewedAt: candidate.autoAccept ? new Date() : null,
+        })
+
+        if (candidate.autoAccept) {
+          const economicType =
+            candidate.method === 'credit_card_payment'
+              ? 'debt_payment'
+              : 'transfer'
+          await tx
+            .update(transactions)
+            .set({
+              economicType,
+              appCategory:
+                candidate.method === 'credit_card_payment'
+                  ? 'Credit card payment'
+                  : 'Transfer',
+              classificationConfidenceBps: candidate.scoreBps,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(transactions.userId, userId),
+                inArray(transactions.id, [
+                  candidate.transactionOutId,
+                  candidate.transactionInId,
+                ]),
+                eq(transactions.userReviewed, false),
+              ),
+            )
+        }
+      }
+      await tx.delete(metricSnapshots).where(eq(metricSnapshots.userId, userId))
+    })
+  }
+
+  async listCandidates(userId: string) {
+    return this.db
+      .select()
+      .from(transferMatches)
+      .where(
+        and(
+          eq(transferMatches.userId, userId),
+          eq(transferMatches.status, 'candidate'),
+        ),
+      )
+      .orderBy(desc(transferMatches.scoreBps))
+  }
+
+  async listAccepted(userId: string) {
+    return this.db
+      .select({
+        transactionOutId: transferMatches.transactionOutId,
+        transactionInId: transferMatches.transactionInId,
+        method: transferMatches.method,
+        scoreBps: transferMatches.scoreBps,
+      })
+      .from(transferMatches)
+      .where(
+        and(
+          eq(transferMatches.userId, userId),
+          eq(transferMatches.status, 'accepted'),
+        ),
+      )
+  }
+
+  async reapplyAccepted(userId: string) {
+    const accepted = await this.listAccepted(userId)
+    await this.db.transaction(async (tx) => {
+      for (const match of accepted) {
+        const economicType =
+          match.method === 'credit_card_payment' ? 'debt_payment' : 'transfer'
+        await tx
+          .update(transactions)
+          .set({
+            economicType,
+            appCategory:
+              match.method === 'credit_card_payment'
+                ? 'Credit card payment'
+                : 'Transfer',
+            classificationConfidenceBps: match.scoreBps,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(transactions.userId, userId),
+              inArray(transactions.id, [
+                match.transactionOutId,
+                match.transactionInId,
+              ]),
+              eq(transactions.userReviewed, false),
+            ),
+          )
+      }
+    })
+  }
+
+  async review(userId: string, matchId: string, accept: boolean) {
+    await this.db.transaction(async (tx) => {
+      const [match] = await tx
+        .select()
+        .from(transferMatches)
+        .where(
+          and(
+            eq(transferMatches.id, matchId),
+            eq(transferMatches.userId, userId),
+            eq(transferMatches.status, 'candidate'),
+          ),
+        )
+        .limit(1)
+      if (match === undefined) {
+        throw new Error('Transfer match not found for owner')
+      }
+
+      await tx
+        .update(transferMatches)
+        .set({
+          status: accept ? 'accepted' : 'rejected',
+          reviewedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(transferMatches.id, matchId))
+
+      if (accept) {
+        const economicType =
+          match.method === 'credit_card_payment' ? 'debt_payment' : 'transfer'
+        await tx
+          .update(transactions)
+          .set({
+            economicType,
+            appCategory:
+              match.method === 'credit_card_payment'
+                ? 'Credit card payment'
+                : 'Transfer',
+            userReviewed: true,
+            classificationConfidenceBps: 10_000,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(transactions.userId, userId),
+              inArray(transactions.id, [
+                match.transactionOutId,
+                match.transactionInId,
+              ]),
+            ),
+          )
+      }
+      await tx.delete(metricSnapshots).where(eq(metricSnapshots.userId, userId))
+      await tx.insert(auditEvents).values({
+        id: randomUUID(),
+        userId,
+        actor: 'owner',
+        action: accept ? 'transfer_match.accepted' : 'transfer_match.rejected',
+        targetType: 'transfer_match',
+        targetId: matchId,
+        metadata: { method: match.method },
+      })
+    })
+  }
+}
+
+export class ClassificationRuleRepository {
+  constructor(private readonly db: Database) {}
+
+  async listActive(userId: string) {
+    return this.db
+      .select()
+      .from(classificationRules)
+      .where(
+        and(
+          eq(classificationRules.userId, userId),
+          eq(classificationRules.active, true),
+        ),
+      )
+      .orderBy(asc(classificationRules.priority), asc(classificationRules.id))
+  }
+
+  async create(input: {
+    userId: string
+    matchConditions: Record<string, unknown>
+    economicType: (typeof classificationRules.$inferInsert)['economicType']
+    category: string
+    priority: number
+  }) {
+    return this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(classificationRules)
+        .values({ id: randomUUID(), ...input })
+        .returning()
+      await tx.insert(auditEvents).values({
+        id: randomUUID(),
+        userId: input.userId,
+        actor: 'owner',
+        action: 'classification_rule.created',
+        targetType: 'classification_rule',
+        targetId: created?.id,
+        metadata: {
+          economicType: input.economicType,
+          category: input.category,
+        },
+      })
+      return created
+    })
+  }
+
+  async remove(userId: string, ruleId: string) {
+    await this.db.transaction(async (tx) => {
+      const removed = await tx
+        .delete(classificationRules)
+        .where(
+          and(
+            eq(classificationRules.id, ruleId),
+            eq(classificationRules.userId, userId),
+          ),
+        )
+        .returning({ id: classificationRules.id })
+      if (removed.length !== 1) {
+        throw new Error('Classification rule not found for owner')
+      }
+      await tx.insert(auditEvents).values({
+        id: randomUUID(),
+        userId,
+        actor: 'owner',
+        action: 'classification_rule.removed',
+        targetType: 'classification_rule',
+        targetId: ruleId,
+        metadata: {},
+      })
+    })
   }
 }
 
@@ -853,6 +1274,7 @@ export function createRepositories(db: Database) {
     accounts: new AccountRepository(db),
     transactions: new TransactionRepository(db),
     transfers: new TransferRepository(db),
+    classificationRules: new ClassificationRuleRepository(db),
     liabilities: new LiabilityRepository(db),
     budgets: new BudgetRepository(db),
     metrics: new MetricRepository(db),

@@ -29,6 +29,7 @@ function createProvider(): PlaidProvider {
         currency: 'USD',
       },
     ]),
+    syncTransactions: vi.fn(),
     removeItem: vi.fn().mockResolvedValue(undefined),
   }
 }

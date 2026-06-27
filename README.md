@@ -55,6 +55,7 @@ is documented in [docs/gcp-architecture.md](docs/gcp-architecture.md).
 - [Database workflow](docs/database-workflow.md)
 - [Firebase owner authentication](docs/firebase-authentication.md)
 - [Plaid Sandbox connection](docs/plaid-sandbox-connection.md)
+- [Transaction synchronization](docs/transaction-synchronization.md)
 - [GCP beginner guide](docs/gcp-getting-started.md)
 - [Plaid beginner guide](docs/plaid-getting-started.md)
 

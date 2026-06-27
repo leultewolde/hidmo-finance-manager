@@ -30,6 +30,10 @@ export default async function DashboardPage() {
     id: connection.id,
     institutionName: connection.institutionName,
     status: connection.status,
+    lastSuccessfulSyncAt:
+      connection.lastSuccessfulSyncAt?.toISOString() ?? null,
+    errorCode: connection.errorCode,
+    reconnectRequiredAt: connection.reconnectRequiredAt?.toISOString() ?? null,
     createdAt: connection.createdAt.toISOString(),
     accounts: connection.accounts.map((account) => ({
       id: account.id,
@@ -40,6 +44,10 @@ export default async function DashboardPage() {
       currency: account.currency,
     })),
   }))
+  const transactionRows =
+    await ownerContext.repositories.transactions.listRecentForUser(
+      ownerContext.databaseOwner.id,
+    )
 
   return (
     <main className="dashboardShell">
@@ -61,6 +69,41 @@ export default async function DashboardPage() {
       </section>
 
       <PlaidConnectionManager initialConnections={connections} />
+
+      <section className="transactionsSection">
+        <div>
+          <p className="sectionLabel">Latest activity</p>
+          <h2>Transactions</h2>
+        </div>
+        {transactionRows.length === 0 ? (
+          <p className="emptyConnections">No synchronized transactions yet.</p>
+        ) : (
+          <ul className="transactionList">
+            {transactionRows.map((transaction) => (
+              <li key={transaction.id}>
+                <div>
+                  <strong>
+                    {transaction.merchantName ?? transaction.description}
+                  </strong>
+                  <span>
+                    {transaction.postedDate} · {transaction.accountName}
+                    {transaction.accountMask === null
+                      ? ''
+                      : ` •••• ${transaction.accountMask}`}{' '}
+                    · {transaction.state}
+                  </span>
+                </div>
+                <strong>
+                  {new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: transaction.currency,
+                  }).format(Number(transaction.normalizedAmountMinor) / 100)}
+                </strong>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </main>
   )
 }

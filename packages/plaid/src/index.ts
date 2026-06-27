@@ -1,3 +1,5 @@
 export * from './adapter.js'
 export * from './encryption.js'
+export * from './fixtures/transactions-sync.js'
 export * from './normalization.js'
+export * from './transaction-normalization.js'

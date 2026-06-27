@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
-import { eq, sql } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -245,6 +245,150 @@ describe('database constraints and transactions', () => {
         .from(accounts)
         .where(eq(accounts.connectionId, connectionId)),
     ).toHaveLength(0)
+  })
+
+  it('applies transaction pages idempotently and advances the cursor atomically', async () => {
+    const providerTransactionId = `sync-${randomUUID()}`
+    const fingerprint = `sync:${randomUUID()}`
+    const transaction = {
+      providerTransactionId,
+      providerAccountId: 'provider_checking-1',
+      postedDate: '2026-06-26',
+      rawProviderAmountMinor: 2_500n,
+      normalizedAmountMinor: -2_500n,
+      currency: 'USD' as const,
+      originalDescription: 'Sanitized merchant',
+      state: 'pending' as const,
+      economicType: 'expense' as const,
+      appCategory: 'FOOD_AND_DRINK',
+      deduplicationFingerprint: fingerprint,
+    }
+
+    await repositories.transactions.applyPlaidSync({
+      userId: syntheticIds.user,
+      connectionId: syntheticIds.connection,
+      startingCursor: null,
+      finalCursor: 'cursor-1',
+      added: [transaction],
+      modified: [],
+      removedProviderTransactionIds: [],
+    })
+    await repositories.transactions.applyPlaidSync({
+      userId: syntheticIds.user,
+      connectionId: syntheticIds.connection,
+      startingCursor: 'cursor-1',
+      finalCursor: 'cursor-2',
+      added: [],
+      modified: [
+        {
+          ...transaction,
+          state: 'posted',
+          normalizedAmountMinor: -2_600n,
+          rawProviderAmountMinor: 2_600n,
+        },
+      ],
+      removedProviderTransactionIds: [],
+    })
+
+    const rows = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.providerTransactionId, providerTransactionId))
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      state: 'posted',
+      normalizedAmountMinor: -2_600n,
+      removed: false,
+    })
+
+    const [connection] = await db
+      .select()
+      .from(connections)
+      .where(eq(connections.id, syntheticIds.connection))
+    expect(connection?.transactionCursor).toBe('cursor-2')
+
+    const pendingProviderId = `pending-${randomUUID()}`
+    await repositories.transactions.applyPlaidSync({
+      userId: syntheticIds.user,
+      connectionId: syntheticIds.connection,
+      startingCursor: 'cursor-2',
+      finalCursor: 'cursor-3',
+      added: [
+        {
+          ...transaction,
+          providerTransactionId: pendingProviderId,
+          state: 'pending',
+          deduplicationFingerprint: `sync:${randomUUID()}`,
+        },
+      ],
+      modified: [],
+      removedProviderTransactionIds: [],
+    })
+    const postedProviderId = `posted-${randomUUID()}`
+    await repositories.transactions.applyPlaidSync({
+      userId: syntheticIds.user,
+      connectionId: syntheticIds.connection,
+      startingCursor: 'cursor-3',
+      finalCursor: 'cursor-4',
+      added: [
+        {
+          ...transaction,
+          providerTransactionId: postedProviderId,
+          pendingProviderTransactionId: pendingProviderId,
+          state: 'posted',
+          deduplicationFingerprint: `sync:${randomUUID()}`,
+        },
+      ],
+      modified: [],
+      removedProviderTransactionIds: [],
+    })
+
+    const replacementRows = await db
+      .select()
+      .from(transactions)
+      .where(
+        inArray(transactions.providerTransactionId, [
+          pendingProviderId,
+          postedProviderId,
+        ]),
+      )
+    expect(
+      replacementRows.find(
+        (row) => row.providerTransactionId === pendingProviderId,
+      )?.removed,
+    ).toBe(true)
+    expect(
+      replacementRows.find(
+        (row) => row.providerTransactionId === postedProviderId,
+      )?.removed,
+    ).toBe(false)
+
+    await repositories.transactions.applyPlaidSync({
+      userId: syntheticIds.user,
+      connectionId: syntheticIds.connection,
+      startingCursor: 'cursor-4',
+      finalCursor: 'cursor-5',
+      added: [],
+      modified: [],
+      removedProviderTransactionIds: [postedProviderId],
+    })
+    const [removedPosted] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.providerTransactionId, postedProviderId))
+    expect(removedPosted?.removed).toBe(true)
+
+    await expect(
+      repositories.transactions.applyPlaidSync({
+        userId: syntheticIds.user,
+        connectionId: syntheticIds.connection,
+        startingCursor: 'stale-cursor',
+        finalCursor: 'must-not-commit',
+        added: [],
+        modified: [],
+        removedProviderTransactionIds: [],
+      }),
+    ).rejects.toThrow('cursor changed')
   })
 
   it('rejects invalid ownership references', async () => {

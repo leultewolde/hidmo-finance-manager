@@ -11,6 +11,9 @@ export interface ConnectionView {
   id: string
   institutionName: string
   status: string
+  lastSuccessfulSyncAt: string | null
+  errorCode: string | null
+  reconnectRequiredAt: string | null
   createdAt: string
   accounts: {
     id: string
@@ -139,6 +142,31 @@ export function PlaidConnectionManager({
     }
   }
 
+  async function sync(connectionId: string) {
+    setWorking(true)
+    setStatus('Synchronizing transaction updates…')
+    try {
+      const csrfToken = await requestCsrfToken()
+      const response = await fetch(`/api/connections/${connectionId}/sync`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csrfToken }),
+      })
+      if (!response.ok) {
+        throw new Error(
+          response.status === 409
+            ? 'A synchronization is already running.'
+            : 'Transactions could not be synchronized.',
+        )
+      }
+      window.location.reload()
+    } catch (error) {
+      setWorking(false)
+      setStatus(error instanceof Error ? error.message : 'Sync failed.')
+    }
+  }
+
   return (
     <section className="connectionsSection">
       <div className="connectionsHeading">
@@ -177,15 +205,38 @@ export function PlaidConnectionManager({
                     Connected{' '}
                     {new Date(connection.createdAt).toLocaleDateString()}
                   </p>
+                  <p>
+                    {connection.lastSuccessfulSyncAt === null
+                      ? 'Transactions not synchronized yet'
+                      : `Last synced ${new Date(
+                          connection.lastSuccessfulSyncAt,
+                        ).toLocaleString()}`}
+                  </p>
+                  {connection.reconnectRequiredAt === null ? null : (
+                    <p className="attentionText">Reconnect required</p>
+                  )}
+                  {connection.errorCode === null ? null : (
+                    <p>Last sync needs attention</p>
+                  )}
                 </div>
-                <button
-                  className="textButton"
-                  disabled={working}
-                  onClick={() => disconnect(connection.id)}
-                  type="button"
-                >
-                  Disconnect
-                </button>
+                <div className="connectionActions">
+                  <button
+                    className="secondaryButton"
+                    disabled={working}
+                    onClick={() => sync(connection.id)}
+                    type="button"
+                  >
+                    Sync now
+                  </button>
+                  <button
+                    className="textButton"
+                    disabled={working}
+                    onClick={() => disconnect(connection.id)}
+                    type="button"
+                  >
+                    Disconnect
+                  </button>
+                </div>
               </div>
               <ul className="accountList">
                 {connection.accounts.map((account) => (

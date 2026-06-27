@@ -555,6 +555,153 @@ TERRAFORM_PR_PLAN_ENABLED=true
 Do not enable remote-state plans for fork pull requests. Terraform state is
 sensitive operational data and should not be exposed to untrusted workflow code.
 
+## Stage H: manual deployment from GitHub
+
+Use this after Terraform state is in GCS and the plan workflow is working.
+
+The manual deployment workflow exists to move the image deployment step from
+your laptop to GitHub while keeping a human approval gate.
+
+What it does:
+
+- runs only through manual `workflow_dispatch`;
+- only runs from the `main` branch;
+- requires `confirm_apply=true`;
+- creates a Terraform plan;
+- rejects plans that touch anything outside:
+  - `finance-web`;
+  - `finance-worker`;
+  - `finance-migrations`;
+- rejects any Terraform delete action;
+- waits for the GitHub `dev` environment approval before applying;
+- optionally runs the migration job;
+- smoke-tests web readiness and worker anonymous access.
+
+What it does not do:
+
+- it does not deploy automatically on merge;
+- it does not apply general infrastructure changes;
+- it does not update GitHub repository variables after deploy.
+
+### Step 1: apply deploy identity resources
+
+After the manual deploy workflow PR is merged, run locally:
+
+```bash
+cd /Users/leul/projects/hidmo/finance-manager/infra/environments/dev
+terraform plan -out=manual-deploy-identity.tfplan
+terraform show manual-deploy-identity.tfplan
+terraform apply manual-deploy-identity.tfplan
+```
+
+Expected plan shape:
+
+- create service account `terraform-deploy-ci`;
+- grant Cloud Run deploy/read permissions;
+- grant read permissions needed for Terraform refresh;
+- grant `terraform-deploy-ci` access to the GCS Terraform backend;
+- allow GitHub Actions to impersonate `terraform-deploy-ci`;
+- grant `terraform-deploy-ci` `actAs` only on the web, worker, and migration
+  runtime service accounts;
+- no Cloud Run service changes unless image values changed separately.
+
+Capture the deploy service account:
+
+```bash
+terraform output -raw terraform_deploy_ci_service_account_email
+```
+
+### Step 2: create the GitHub `dev` environment
+
+GitHub repository
+→ Settings
+→ Environments
+→ New environment
+
+Name:
+
+```text
+dev
+```
+
+Configure protection rules:
+
+- Required reviewers: enabled.
+- Add yourself as the reviewer.
+- Optional: prevent self-review if you want stricter separation later.
+
+Do not set `TERRAFORM_DEPLOY_APPROVAL_CONFIGURED=true` until the environment
+requires reviewer approval. If the environment has no protection rules, GitHub
+will not pause before deployment.
+
+### Step 3: configure deploy repository variables
+
+GitHub repository
+→ Settings
+→ Secrets and variables
+→ Actions
+→ Variables
+
+Add:
+
+```text
+TERRAFORM_DEPLOY_ENABLED=true
+TERRAFORM_DEPLOY_APPROVAL_CONFIGURED=true
+GCP_TERRAFORM_DEPLOY_SERVICE_ACCOUNT=<terraform output>
+```
+
+Keep these existing variables current:
+
+```text
+GCP_WORKLOAD_IDENTITY_PROVIDER
+TERRAFORM_STATE_BUCKET
+TERRAFORM_STATE_PREFIX
+GCP_BILLING_ACCOUNT_ID
+FIREBASE_OWNER_UID
+DEV_WEB_IMAGE
+DEV_WORKER_IMAGE
+DEV_MIGRATION_IMAGE
+```
+
+### Step 4: run a manual deployment
+
+Use the latest image digest values from the `CD Artifacts` workflow output.
+
+GitHub repository
+→ Actions
+→ Manual Deploy Dev
+→ Run workflow
+
+Select branch:
+
+```text
+main
+```
+
+Inputs:
+
+```text
+web_image=<new web digest or blank to use DEV_WEB_IMAGE>
+worker_image=<new worker digest or blank to use DEV_WORKER_IMAGE>
+migration_image=<new migrations digest or blank to use DEV_MIGRATION_IMAGE>
+run_migrations=true or false
+confirm_apply=true
+```
+
+Review the plan job summary. If the plan is acceptable, approve the waiting
+`dev` environment deployment.
+
+After a successful deployment, update repository variables to match the
+deployed image values:
+
+```text
+DEV_WEB_IMAGE=<deployed web digest>
+DEV_WORKER_IMAGE=<deployed worker digest>
+DEV_MIGRATION_IMAGE=<deployed migrations digest>
+```
+
+This keeps future Terraform Plan workflow runs from proposing a rollback.
+
 ## Important notes
 
 - Do not put secret values in `terraform.tfvars`.

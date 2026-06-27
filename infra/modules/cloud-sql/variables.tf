@@ -29,6 +29,12 @@ variable "tier" {
   description = "Machine tier."
 }
 
+variable "edition" {
+  type        = string
+  description = "Cloud SQL edition. ENTERPRISE supports low-cost shared-core tiers such as db-f1-micro."
+  default     = "ENTERPRISE"
+}
+
 variable "availability_type" {
   type        = string
   description = "Availability type."
@@ -87,4 +93,3 @@ variable "runtime_user_password" {
   default     = null
   sensitive   = true
 }
-

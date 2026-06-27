@@ -175,6 +175,12 @@ variable "sql_tier" {
   default     = "db-f1-micro"
 }
 
+variable "sql_edition" {
+  type        = string
+  description = "Cloud SQL edition. Keep ENTERPRISE for the low-cost dev tier."
+  default     = "ENTERPRISE"
+}
+
 variable "sql_runtime_user_name" {
   type        = string
   description = "Runtime database user name."

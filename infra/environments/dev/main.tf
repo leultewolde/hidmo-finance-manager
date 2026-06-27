@@ -264,6 +264,7 @@ module "cloud_sql" {
   instance_name             = var.sql_instance_name
   database_name             = var.sql_database_name
   tier                      = var.sql_tier
+  edition                   = var.sql_edition
   private_network_self_link = module.network[0].network_self_link
   deletion_protection       = false
   runtime_user_name         = var.sql_runtime_user_name

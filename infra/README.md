@@ -61,5 +61,10 @@ pnpm deploy:images:dev:web
 The script prints `web_image`, `worker_image`, and `migration_image` values in
 the exact format expected by `infra/environments/dev/terraform.tfvars`.
 
+After GitHub OIDC is configured, the `CD Artifacts` workflow also publishes
+main-branch images to Artifact Registry and uploads the same Terraform-ready
+digest values as a workflow artifact. It does not deploy Cloud Run or run
+`terraform apply`.
+
 See `infra/environments/dev/README.md` for the full runbook, recovery notes,
 and post-deployment verification checklist.

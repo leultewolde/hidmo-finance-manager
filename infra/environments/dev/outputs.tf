@@ -18,6 +18,14 @@ output "cloud_tasks_queue_names" {
   value = try(module.cloud_tasks[0].queue_names, {})
 }
 
+output "deploy_ci_service_account_email" {
+  value = module.service_accounts.emails["deploy-ci"]
+}
+
+output "github_actions_workload_identity_provider" {
+  value = module.github_actions_identity.provider_name
+}
+
 output "kms_key_name" {
   value = try(module.kms[0].crypto_key_name, null)
 }

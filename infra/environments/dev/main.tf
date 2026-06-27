@@ -187,6 +187,7 @@ module "project_services" {
     "compute.googleapis.com",
     "firebase.googleapis.com",
     "iam.googleapis.com",
+    "iamcredentials.googleapis.com",
     "identitytoolkit.googleapis.com",
     "logging.googleapis.com",
     "monitoring.googleapis.com",
@@ -217,6 +218,24 @@ module "artifact_registry" {
   writer_members = ["serviceAccount:${module.service_accounts.emails["deploy-ci"]}"]
 
   depends_on = [module.project_services]
+}
+
+module "github_actions_identity" {
+  source = "../../modules/github-actions-identity"
+
+  project_id           = var.project_id
+  pool_id              = var.github_actions_workload_identity_pool_id
+  provider_id          = var.github_actions_workload_identity_provider_id
+  display_name         = "Finance Manager GitHub Actions"
+  description          = "Allows the repository main branch to publish reviewed container images without service account keys."
+  github_repository    = var.github_repository
+  github_ref           = var.github_actions_ref
+  service_account_name = module.service_accounts.names["deploy-ci"]
+
+  depends_on = [
+    module.project_services,
+    module.service_accounts,
+  ]
 }
 
 module "network" {

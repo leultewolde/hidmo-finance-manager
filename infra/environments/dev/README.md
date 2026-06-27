@@ -136,6 +136,84 @@ worker_image = "us-east1-docker.pkg.dev/finance-manager-dev-500423/finance-image
 migration_image = "us-east1-docker.pkg.dev/finance-manager-dev-500423/finance-images/migrations@sha256:..."
 ```
 
+### Optional: GitHub CD artifact publishing
+
+After the GitHub Actions identity resources are applied and repository
+variables are configured, the `CD Artifacts` workflow publishes images whenever
+changes land on `main`.
+
+This workflow is deliberately limited:
+
+- it builds and pushes images only;
+- it writes immutable `@sha256` digest values to the workflow summary;
+- it uploads `dev-image-digests.txt` as a workflow artifact;
+- it does not deploy Cloud Run;
+- it does not run `terraform apply`.
+
+One-time GCP setup:
+
+```bash
+cd /Users/leul/projects/hidmo/finance-manager/infra/environments/dev
+terraform plan -out=github-actions-identity.tfplan
+terraform show github-actions-identity.tfplan
+terraform apply github-actions-identity.tfplan
+```
+
+Expected plan shape:
+
+- enable `iamcredentials.googleapis.com` if it is not already enabled;
+- create a Workload Identity Pool named `github-actions`;
+- create a GitHub OIDC provider named `github`;
+- allow only `leultewolde/hidmo-finance-manager` on `refs/heads/main` to
+  impersonate `deploy-ci`;
+- no Cloud Run deployment changes unless image values changed separately.
+
+After apply, capture the values GitHub needs:
+
+```bash
+terraform output -raw github_actions_workload_identity_provider
+terraform output -raw deploy_ci_service_account_email
+```
+
+Then set these repository variables in GitHub:
+
+GitHub repository
+→ Settings
+→ Secrets and variables
+→ Actions
+→ Variables
+
+Required variables:
+
+```text
+CD_ARTIFACTS_ENABLED=true
+GCP_WORKLOAD_IDENTITY_PROVIDER=<terraform output>
+GCP_DEPLOY_SERVICE_ACCOUNT=<terraform output>
+NEXT_PUBLIC_FIREBASE_API_KEY=<Firebase web app value>
+NEXT_PUBLIC_FIREBASE_APP_ID=<Firebase web app value>
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=<Firebase web app value>
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=finance-manager-dev-500423
+```
+
+The Firebase web values are public client configuration, not Firebase Admin
+credentials. Do not add Plaid secrets, database URLs, Terraform state, or
+service account keys to GitHub.
+
+To test manually:
+
+GitHub repository
+→ Actions
+→ CD Artifacts
+→ Run workflow
+
+After a successful run, copy the digest values from either:
+
+- the workflow job summary; or
+- the uploaded `dev-image-digests-...` artifact.
+
+Paste those values into `terraform.tfvars`, then plan and apply from your
+workstation when you intentionally want to deploy them.
+
 Manual equivalent:
 
 ```bash

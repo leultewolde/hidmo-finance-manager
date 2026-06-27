@@ -455,6 +455,41 @@ jobs:
             6 \
             5
 
+      - name: Smoke test Cloud Tasks delivery
+        env:
+          WORKER_URL: https://finance-worker-wn5w6w4mva-ue.a.run.app
+        run: |
+          task_id="deploy-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          idempotency_key="cloud-tasks-smoke:${task_id}"
+          body="{\"operation\":\"cloud-tasks.smoke\",\"schemaVersion\":1,\"idempotencyKey\":\"${idempotency_key}\"}"
+
+          gcloud tasks create-http-task "${task_id}" \
+            --project "${PROJECT_ID}" \
+            --location "${REGION}" \
+            --queue calculation \
+            --url "${WORKER_URL}/tasks/smoke" \
+            --method POST \
+            --header "content-type: application/json" \
+            --body-content "${body}" \
+            --oidc-service-account-email "tasks-invoker@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --oidc-token-audience "${WORKER_URL}"
+
+          for attempt in $(seq 1 24); do
+            if ! gcloud tasks describe "${task_id}" \
+              --project "${PROJECT_ID}" \
+              --location "${REGION}" \
+              --queue calculation >/dev/null 2>&1; then
+              echo "Cloud Tasks smoke task completed on attempt ${attempt}."
+              exit 0
+            fi
+
+            echo "Cloud Tasks smoke task still pending or retrying. Attempt ${attempt}/24."
+            sleep 5
+          done
+
+          echo "::error::Cloud Tasks smoke task did not complete within 120 seconds."
+          exit 1
+
       - name: Record deployed image variables
         id: record-images
         env:
@@ -513,6 +548,7 @@ jobs:
             echo
             echo "- Web readiness returned HTTP 200."
             echo "- Worker anonymous health returned HTTP 403."
+            echo "- Cloud Tasks smoke delivery completed."
             echo "- Migrations requested: \`${{ inputs.run_migrations }}\`"
             if [ "$RECORDED_IMAGE_VARIABLES" = "true" ]; then
               echo "- Repository variables \`DEV_WEB_IMAGE\`, \`DEV_WORKER_IMAGE\`, and \`DEV_MIGRATION_IMAGE\` were updated to the deployed image values."

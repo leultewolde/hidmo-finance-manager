@@ -74,7 +74,7 @@ Normal development deployments are handled by the `Manual Deploy Dev` workflow
 after the `dev` GitHub environment has required reviewers configured. It is
 `workflow_dispatch` only, restricts applies to Cloud Run image updates, can
 record the deployed image repository variables after successful smoke checks,
-and does not run unattended deployments.
+verifies Cloud Tasks delivery, and does not run unattended deployments.
 
 See `docs/normal-dev-deploy.md` for the concise day-to-day process. See
 `infra/environments/dev/README.md` for the full runbook, recovery notes, and

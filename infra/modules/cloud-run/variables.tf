@@ -81,6 +81,16 @@ variable "web_environment" {
   default     = {}
 }
 
+variable "web_cloud_tasks_environment" {
+  type = object({
+    calculation_queue             = string
+    invoker_service_account_email = string
+    location                      = string
+  })
+  description = "Cloud Tasks environment variables injected into the web service. Worker URL is derived from the worker service URI."
+  default     = null
+}
+
 variable "worker_environment" {
   type        = map(string)
   description = "Plain worker environment variables."

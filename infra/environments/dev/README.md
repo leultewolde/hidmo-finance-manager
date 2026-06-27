@@ -576,7 +576,8 @@ What it does:
 - waits for the GitHub `dev` environment approval before applying;
 - optionally runs the migration job;
 - smoke-tests web readiness and worker anonymous access;
-- updates the deployed image repository variables after the smoke checks pass.
+- enqueues a Cloud Tasks smoke task and waits for completion;
+- updates the deployed image repository variables after all smoke checks pass.
 
 What it does not do:
 
@@ -664,11 +665,9 @@ DEV_MIGRATION_IMAGE
 ```
 
 The workflow updates the three `DEV_*_IMAGE` variables automatically after a
-successful apply and smoke test only when the repository has an
-`ACTIONS_VARIABLES_TOKEN` secret with Variables write access. GitHub's built-in
-`GITHUB_TOKEN` cannot update repository variables here. If that secret is not
-configured, the deploy still succeeds and the workflow summary prints the image
-values to set manually before running the next Terraform plan.
+successful apply and smoke test using the `ACTIONS_VARIABLES_TOKEN` secret.
+That secret must keep Variables write access. Do not update these variables
+manually during normal deploys.
 
 ### Step 4: run a manual deployment
 
@@ -698,10 +697,10 @@ confirm_apply=true
 Review the plan job summary. If the plan is acceptable, approve the waiting
 `dev` environment deployment.
 
-After a successful deployment, either the workflow records the deployed image
-values in `DEV_WEB_IMAGE`, `DEV_WORKER_IMAGE`, and `DEV_MIGRATION_IMAGE`, or it
-prints the exact values for manual entry. Keeping these variables current
-prevents future Terraform Plan workflow runs from proposing a rollback.
+After a successful deployment, the workflow records the deployed image values in
+`DEV_WEB_IMAGE`, `DEV_WORKER_IMAGE`, and `DEV_MIGRATION_IMAGE`. Keeping these
+variables current prevents future Terraform Plan workflow runs from proposing a
+rollback.
 
 ## Important notes
 

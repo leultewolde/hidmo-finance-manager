@@ -72,6 +72,38 @@ resource "google_cloud_run_v2_service" "web" {
       }
 
       dynamic "env" {
+        for_each = var.web_cloud_tasks_environment == null ? [] : [var.web_cloud_tasks_environment]
+        content {
+          name  = "CLOUD_TASKS_LOCATION"
+          value = env.value.location
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.web_cloud_tasks_environment == null ? [] : [var.web_cloud_tasks_environment]
+        content {
+          name  = "CLOUD_TASKS_CALCULATION_QUEUE"
+          value = env.value.calculation_queue
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.web_cloud_tasks_environment == null ? [] : [var.web_cloud_tasks_environment]
+        content {
+          name  = "CLOUD_TASKS_INVOKER_SERVICE_ACCOUNT_EMAIL"
+          value = env.value.invoker_service_account_email
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.web_cloud_tasks_environment == null ? [] : [var.web_cloud_tasks_environment]
+        content {
+          name  = "CLOUD_TASKS_WORKER_URL"
+          value = google_cloud_run_v2_service.worker.uri
+        }
+      }
+
+      dynamic "env" {
         for_each = var.web_secret_env
         content {
           name = env.key

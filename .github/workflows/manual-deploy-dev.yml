@@ -306,7 +306,6 @@ jobs:
       name: dev
 
     permissions:
-      actions: write
       contents: read
       id-token: write
 
@@ -457,13 +456,20 @@ jobs:
             5
 
       - name: Record deployed image variables
+        id: record-images
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.ACTIONS_VARIABLES_TOKEN }}
           WEB_IMAGE: ${{ needs.plan.outputs.web_image }}
           WORKER_IMAGE: ${{ needs.plan.outputs.worker_image }}
           MIGRATION_IMAGE: ${{ needs.plan.outputs.migration_image }}
         run: |
           set -euo pipefail
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::ACTIONS_VARIABLES_TOKEN is not configured. Repository image variables were not updated."
+            echo "recorded=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           set_variable() {
             local name="$1"
@@ -493,8 +499,14 @@ jobs:
           set_variable DEV_WEB_IMAGE "${WEB_IMAGE}"
           set_variable DEV_WORKER_IMAGE "${WORKER_IMAGE}"
           set_variable DEV_MIGRATION_IMAGE "${MIGRATION_IMAGE}"
+          echo "recorded=true" >> "$GITHUB_OUTPUT"
 
       - name: Summarize deployment
+        env:
+          WEB_IMAGE: ${{ needs.plan.outputs.web_image }}
+          WORKER_IMAGE: ${{ needs.plan.outputs.worker_image }}
+          MIGRATION_IMAGE: ${{ needs.plan.outputs.migration_image }}
+          RECORDED_IMAGE_VARIABLES: ${{ steps.record-images.outputs.recorded }}
         run: |
           {
             echo "## Manual deploy complete"
@@ -502,5 +514,17 @@ jobs:
             echo "- Web readiness returned HTTP 200."
             echo "- Worker anonymous health returned HTTP 403."
             echo "- Migrations requested: \`${{ inputs.run_migrations }}\`"
-            echo "- Repository variables \`DEV_WEB_IMAGE\`, \`DEV_WORKER_IMAGE\`, and \`DEV_MIGRATION_IMAGE\` were updated to the deployed image values."
+            if [ "$RECORDED_IMAGE_VARIABLES" = "true" ]; then
+              echo "- Repository variables \`DEV_WEB_IMAGE\`, \`DEV_WORKER_IMAGE\`, and \`DEV_MIGRATION_IMAGE\` were updated to the deployed image values."
+            else
+              echo "- Repository variables were not updated automatically because \`ACTIONS_VARIABLES_TOKEN\` is not configured."
+              echo
+              echo "Set these repository variables before the next Terraform plan:"
+              echo
+              echo "\`\`\`text"
+              echo "DEV_WEB_IMAGE=${WEB_IMAGE}"
+              echo "DEV_WORKER_IMAGE=${WORKER_IMAGE}"
+              echo "DEV_MIGRATION_IMAGE=${MIGRATION_IMAGE}"
+              echo "\`\`\`"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

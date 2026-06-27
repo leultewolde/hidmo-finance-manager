@@ -575,13 +575,13 @@ What it does:
 - rejects any Terraform delete action;
 - waits for the GitHub `dev` environment approval before applying;
 - optionally runs the migration job;
-- smoke-tests web readiness and worker anonymous access.
+- smoke-tests web readiness and worker anonymous access;
+- updates the deployed image repository variables after the smoke checks pass.
 
 What it does not do:
 
 - it does not deploy automatically on merge;
-- it does not apply general infrastructure changes;
-- it does not update GitHub repository variables after deploy.
+- it does not apply general infrastructure changes.
 
 ### Step 1: apply deploy identity resources
 
@@ -663,6 +663,11 @@ DEV_WORKER_IMAGE
 DEV_MIGRATION_IMAGE
 ```
 
+The workflow updates the three `DEV_*_IMAGE` variables automatically after a
+successful apply and smoke test. If that final recording step fails, set them
+manually to the image values printed in the workflow summary before running the
+next Terraform plan.
+
 ### Step 4: run a manual deployment
 
 Use the latest image digest values from the `CD Artifacts` workflow output.
@@ -691,16 +696,9 @@ confirm_apply=true
 Review the plan job summary. If the plan is acceptable, approve the waiting
 `dev` environment deployment.
 
-After a successful deployment, update repository variables to match the
-deployed image values:
-
-```text
-DEV_WEB_IMAGE=<deployed web digest>
-DEV_WORKER_IMAGE=<deployed worker digest>
-DEV_MIGRATION_IMAGE=<deployed migrations digest>
-```
-
-This keeps future Terraform Plan workflow runs from proposing a rollback.
+After a successful deployment, the workflow records the deployed image values in
+`DEV_WEB_IMAGE`, `DEV_WORKER_IMAGE`, and `DEV_MIGRATION_IMAGE`. This keeps
+future Terraform Plan workflow runs from proposing a rollback.
 
 ## Important notes
 

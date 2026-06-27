@@ -306,6 +306,7 @@ jobs:
       name: dev
 
     permissions:
+      actions: write
       contents: read
       id-token: write
 
@@ -455,6 +456,44 @@ jobs:
             6 \
             5
 
+      - name: Record deployed image variables
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEB_IMAGE: ${{ needs.plan.outputs.web_image }}
+          WORKER_IMAGE: ${{ needs.plan.outputs.worker_image }}
+          MIGRATION_IMAGE: ${{ needs.plan.outputs.migration_image }}
+        run: |
+          set -euo pipefail
+
+          set_variable() {
+            local name="$1"
+            local value="$2"
+
+            if gh api \
+              --method PATCH \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "/repos/${GITHUB_REPOSITORY}/actions/variables/${name}" \
+              -f name="${name}" \
+              -f value="${value}"; then
+              echo "Updated ${name}."
+              return 0
+            fi
+
+            gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "/repos/${GITHUB_REPOSITORY}/actions/variables" \
+              -f name="${name}" \
+              -f value="${value}"
+            echo "Created ${name}."
+          }
+
+          set_variable DEV_WEB_IMAGE "${WEB_IMAGE}"
+          set_variable DEV_WORKER_IMAGE "${WORKER_IMAGE}"
+          set_variable DEV_MIGRATION_IMAGE "${MIGRATION_IMAGE}"
+
       - name: Summarize deployment
         run: |
           {
@@ -463,6 +502,5 @@ jobs:
             echo "- Web readiness returned HTTP 200."
             echo "- Worker anonymous health returned HTTP 403."
             echo "- Migrations requested: \`${{ inputs.run_migrations }}\`"
-            echo
-            echo "Update repository variables \`DEV_WEB_IMAGE\`, \`DEV_WORKER_IMAGE\`, and \`DEV_MIGRATION_IMAGE\` to match the deployed image values if they changed."
+            echo "- Repository variables \`DEV_WEB_IMAGE\`, \`DEV_WORKER_IMAGE\`, and \`DEV_MIGRATION_IMAGE\` were updated to the deployed image values."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -3,7 +3,8 @@ billing_account_id = "0149A2-6F2160-329E77"
 region            = "us-east1"
 
 # Keep this false for the first apply. That bootstrap apply creates the APIs,
-# service accounts, and Artifact Registry repository needed to publish images.
+# service accounts, Artifact Registry repository, and GitHub Actions identity
+# resources needed to publish images.
 enable_runtime_infrastructure = false
 enable_cloud_run              = false
 
@@ -12,6 +13,10 @@ create_budget = false
 
 # Replace this with the Firebase UID for the allowed owner account.
 owner_firebase_uid = "replace-me"
+
+# GitHub Actions may only publish images from this repository's main branch.
+github_repository  = "leultewolde/hidmo-finance-manager"
+github_actions_ref = "refs/heads/main"
 
 # These placeholders are ignored while enable_cloud_run is false.
 # After pushing the images, replace them with immutable @sha256 digests and set

@@ -1,0 +1,180 @@
+name: CD Artifacts
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-artifacts-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROJECT_ID: finance-manager-dev-500423
+  REGION: us-east1
+  ARTIFACT_REGISTRY_HOST: us-east1-docker.pkg.dev
+  IMAGE_REPOSITORY: us-east1-docker.pkg.dev/finance-manager-dev-500423/finance-images
+  IMAGE_PLATFORM: linux/amd64
+
+jobs:
+  disabled:
+    name: CD artifacts disabled
+    if: github.event_name == 'push' && vars.CD_ARTIFACTS_ENABLED != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain skipped publishing
+        run: |
+          {
+            echo "## CD artifacts skipped"
+            echo
+            echo "Set repository variable \`CD_ARTIFACTS_ENABLED=true\` after configuring GitHub OIDC variables to publish images on main."
+            echo
+            echo "This workflow intentionally does not deploy Cloud Run or run Terraform apply."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish image artifacts
+    if: github.event_name == 'workflow_dispatch' || vars.CD_ARTIFACTS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate required repository variables
+        env:
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ vars.NEXT_PUBLIC_FIREBASE_API_KEY }}
+          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_APP_ID }}
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ vars.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ vars.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+        run: |
+          missing=0
+          for name in \
+            GCP_WORKLOAD_IDENTITY_PROVIDER \
+            GCP_DEPLOY_SERVICE_ACCOUNT \
+            NEXT_PUBLIC_FIREBASE_API_KEY \
+            NEXT_PUBLIC_FIREBASE_APP_ID \
+            NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN \
+            NEXT_PUBLIC_FIREBASE_PROJECT_ID
+          do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository variable: ${name}"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Prepare image metadata
+        id: meta
+        run: |
+          short_sha="${GITHUB_SHA::12}"
+          image_tag="${short_sha}-amd64"
+          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${image_tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          token_format: access_token
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Log in to Artifact Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.ARTIFACT_REGISTRY_HOST }}
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push web image
+        id: web
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: web
+          platforms: ${{ env.IMAGE_PLATFORM }}
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.IMAGE_REPOSITORY }}/web:${{ steps.meta.outputs.image_tag }}
+            ${{ env.IMAGE_REPOSITORY }}/web:main
+          build-args: |
+            NEXT_PUBLIC_FIREBASE_API_KEY=${{ vars.NEXT_PUBLIC_FIREBASE_API_KEY }}
+            NEXT_PUBLIC_FIREBASE_APP_ID=${{ vars.NEXT_PUBLIC_FIREBASE_APP_ID }}
+            NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${{ vars.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+            NEXT_PUBLIC_FIREBASE_PROJECT_ID=${{ vars.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+
+      - name: Build and push worker image
+        id: worker
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: worker
+          platforms: ${{ env.IMAGE_PLATFORM }}
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.IMAGE_REPOSITORY }}/worker:${{ steps.meta.outputs.image_tag }}
+            ${{ env.IMAGE_REPOSITORY }}/worker:main
+
+      - name: Build and push migrations image
+        id: migrations
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: migrations
+          platforms: ${{ env.IMAGE_PLATFORM }}
+          push: true
+          provenance: false
+          tags: |
+            ${{ env.IMAGE_REPOSITORY }}/migrations:${{ steps.meta.outputs.image_tag }}
+            ${{ env.IMAGE_REPOSITORY }}/migrations:main
+
+      - name: Write Terraform image digest values
+        run: |
+          mkdir -p deployment-artifacts
+          {
+            echo "web_image = \"${IMAGE_REPOSITORY}/web@${WEB_DIGEST}\""
+            echo "worker_image = \"${IMAGE_REPOSITORY}/worker@${WORKER_DIGEST}\""
+            echo "migration_image = \"${IMAGE_REPOSITORY}/migrations@${MIGRATIONS_DIGEST}\""
+          } > deployment-artifacts/dev-image-digests.txt
+
+          {
+            echo "## Published deployment artifacts"
+            echo
+            echo "Tag: \`${IMAGE_TAG}\`"
+            echo "Platform: \`${IMAGE_PLATFORM}\`"
+            echo
+            echo "\`\`\`hcl"
+            cat deployment-artifacts/dev-image-digests.txt
+            echo "\`\`\`"
+            echo
+            echo "No Cloud Run deploy or Terraform apply was performed."
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+          WORKER_DIGEST: ${{ steps.worker.outputs.digest }}
+          MIGRATIONS_DIGEST: ${{ steps.migrations.outputs.digest }}
+
+      - name: Upload image digest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-image-digests-${{ steps.meta.outputs.short_sha }}
+          path: deployment-artifacts/dev-image-digests.txt
+          if-no-files-found: error

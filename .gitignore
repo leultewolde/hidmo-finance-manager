@@ -9,6 +9,7 @@ coverage/
 .env
 .env.*
 !.env.example
+gha-creds-*.json
 
 # Editors and operating systems
 .idea/

@@ -157,6 +157,30 @@ variable "artifact_registry_repository_id" {
   default     = "finance-images"
 }
 
+variable "github_repository" {
+  type        = string
+  description = "GitHub repository allowed to publish deployment artifacts."
+  default     = "leultewolde/hidmo-finance-manager"
+}
+
+variable "github_actions_ref" {
+  type        = string
+  description = "Git ref allowed to impersonate deploy-ci."
+  default     = "refs/heads/main"
+}
+
+variable "github_actions_workload_identity_pool_id" {
+  type        = string
+  description = "Workload Identity Pool ID for GitHub Actions."
+  default     = "github-actions"
+}
+
+variable "github_actions_workload_identity_provider_id" {
+  type        = string
+  description = "Workload Identity Provider ID for GitHub Actions."
+  default     = "github"
+}
+
 variable "sql_instance_name" {
   type        = string
   description = "Cloud SQL instance name."

@@ -16,7 +16,13 @@ const logger = createLogger('web-plaid')
 
 export async function POST(request: NextRequest) {
   try {
-    if (!hasSameOrigin(request.url, request.headers.get('origin'))) {
+    if (
+      !hasSameOrigin(
+        request.url,
+        request.headers.get('origin'),
+        request.headers,
+      )
+    ) {
       return NextResponse.json({ error: 'invalid-origin' }, { status: 403 })
     }
 

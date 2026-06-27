@@ -33,4 +33,26 @@ describe('request security', () => {
       false,
     )
   })
+
+  it('accepts a trusted forwarded origin from the deployment proxy', () => {
+    const headers = new Headers({
+      'x-forwarded-host': 'finance-web-wn5w6w4mva-ue.a.run.app',
+      'x-forwarded-proto': 'https',
+    })
+
+    expect(
+      hasSameOrigin(
+        'http://localhost:8080/api/auth/session',
+        'https://finance-web-wn5w6w4mva-ue.a.run.app',
+        headers,
+      ),
+    ).toBe(true)
+    expect(
+      hasSameOrigin(
+        'http://localhost:8080/api/auth/session',
+        'https://attacker.test',
+        headers,
+      ),
+    ).toBe(false)
+  })
 })

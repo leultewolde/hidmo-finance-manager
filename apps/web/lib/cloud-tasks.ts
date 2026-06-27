@@ -2,8 +2,6 @@ import 'server-only'
 
 import { randomUUID } from 'node:crypto'
 
-import { CloudTasksClient } from '@google-cloud/tasks'
-
 import { cloudTaskSmokePayloadSchema } from '@hidmo/contracts'
 
 import { getWebEnvironment } from '@hidmo/config'
@@ -16,18 +14,36 @@ type CloudTaskConfig = {
   workerUrl: string
 }
 
-const globalServices = globalThis as typeof globalThis & {
-  hidmoCloudTasksClient?: CloudTasksClient
+type MetadataTokenResponse = {
+  access_token: string
+  expires_in: number
+  token_type: string
 }
 
-function getCloudTasksClient() {
-  const client = globalServices.hidmoCloudTasksClient ?? new CloudTasksClient()
-
-  if (getWebEnvironment().APP_ENV !== 'production') {
-    globalServices.hidmoCloudTasksClient = client
+async function getCloudRunAccessToken() {
+  const response = await fetch(
+    'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+    {
+      headers: {
+        'metadata-flavor': 'Google',
+      },
+    },
+  )
+  if (!response.ok) {
+    throw new Error(
+      `Unable to read Cloud Run metadata token: HTTP ${response.status}`,
+    )
   }
 
-  return client
+  const token = (await response.json()) as MetadataTokenResponse
+  if (
+    typeof token.access_token !== 'string' ||
+    token.access_token.length === 0
+  ) {
+    throw new Error('Cloud Run metadata token response did not include a token')
+  }
+
+  return token.access_token
 }
 
 export function getCloudTaskConfig(): CloudTaskConfig {
@@ -64,38 +80,52 @@ export function getCloudTaskConfig(): CloudTaskConfig {
 
 export async function enqueueCloudTasksSmokeTask() {
   const config = getCloudTaskConfig()
-  const client = getCloudTasksClient()
-  const parent = client.queuePath(
-    config.projectId,
-    config.location,
-    config.queue,
-  )
   const idempotencyKey = `cloud-tasks-smoke:${randomUUID()}`
   const payload = cloudTaskSmokePayloadSchema.parse({
     operation: 'cloud-tasks.smoke',
     schemaVersion: 1,
     idempotencyKey,
   })
-  const [task] = await client.createTask({
-    parent,
-    task: {
-      httpRequest: {
-        httpMethod: 'POST',
-        url: `${config.workerUrl}/tasks/smoke`,
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: Buffer.from(JSON.stringify(payload)).toString('base64'),
-        oidcToken: {
-          serviceAccountEmail: config.serviceAccountEmail,
-          audience: config.workerUrl,
-        },
+
+  const accessToken = await getCloudRunAccessToken()
+  const parent = `projects/${config.projectId}/locations/${config.location}/queues/${config.queue}`
+  const response = await fetch(
+    `https://cloudtasks.googleapis.com/v2/${parent}/tasks`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
       },
+      body: JSON.stringify({
+        task: {
+          httpRequest: {
+            httpMethod: 'POST',
+            url: `${config.workerUrl}/tasks/smoke`,
+            headers: {
+              'content-type': 'application/json',
+            },
+            body: Buffer.from(JSON.stringify(payload)).toString('base64'),
+            oidcToken: {
+              serviceAccountEmail: config.serviceAccountEmail,
+              audience: config.workerUrl,
+            },
+          },
+        },
+      }),
     },
-  })
+  )
+  if (!response.ok) {
+    const errorBody = await response.text()
+    throw new Error(
+      `Cloud Tasks createTask failed: HTTP ${response.status} ${errorBody}`,
+    )
+  }
+
+  const task = (await response.json()) as { name?: string }
 
   return {
     idempotencyKey,
-    taskName: task.name,
+    taskName: task.name ?? '',
   }
 }

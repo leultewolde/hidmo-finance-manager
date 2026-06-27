@@ -38,7 +38,13 @@ export async function POST(request: NextRequest) {
       typeof body.category !== 'string' ||
       body.category.trim().length === 0
     ) {
-      return NextResponse.json({ error: 'invalid-rule' }, { status: 400 })
+      return NextResponse.json(
+        {
+          error: 'invalid-rule',
+          message: 'A merchant, valid type, and category are required.',
+        },
+        { status: 400 },
+      )
     }
 
     const { databaseOwner, repositories } = await requireDatabaseOwner()
@@ -66,6 +72,15 @@ export async function POST(request: NextRequest) {
     if (error instanceof AuthFailure) {
       return NextResponse.json({ error: error.code }, { status: error.status })
     }
-    return NextResponse.json({ error: 'rule-creation-failed' }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: 'rule-creation-failed',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'The rule could not be saved.',
+      },
+      { status: 400 },
+    )
   }
 }

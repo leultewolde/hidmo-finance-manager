@@ -378,8 +378,30 @@ li {
   border-top: 1px solid #30362d;
 }
 
-.reviewSection h2 {
+.reviewSectionHeader {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.reviewSectionHeader h2 {
   margin-top: 12px;
+}
+
+.reviewSectionHeader > div > p:last-child {
+  max-width: 620px;
+  margin: 10px 0 0;
+  color: #8d9789;
+}
+
+.queueCount {
+  flex: none;
+  padding: 8px 12px;
+  border: 1px solid #485044;
+  border-radius: 999px;
+  color: #cbd3c5;
+  font-size: 0.85rem;
 }
 
 .reviewGrid,
@@ -392,28 +414,92 @@ li {
 
 .reviewCard {
   display: grid;
-  gap: 20px;
-  padding: 24px;
+  gap: 22px;
+  padding: 28px;
   border: 1px solid #30362d;
   border-radius: 16px;
   background: rgb(255 255 255 / 2%);
 }
 
-.reviewCard p,
+.reviewCardHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.reviewTransaction {
+  min-width: 0;
+}
+
+.reviewTransaction h3 {
+  overflow-wrap: anywhere;
+  margin: 5px 0 0;
+  font-size: 1.15rem;
+}
+
+.reviewTransaction p,
 .ruleList p {
   margin: 6px 0 0;
   color: #8d9789;
 }
 
+.reviewDate {
+  color: #8d9789;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.reviewAmount {
+  flex: none;
+  font-size: 1.25rem;
+}
+
+.classificationContext {
+  display: grid;
+  grid-template-columns: 1.5fr 1.5fr 0.6fr;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #30362d;
+  border-radius: 10px;
+  background: #30362d;
+}
+
+.classificationContext > div {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  background: #171b15;
+}
+
+.classificationContext span,
+.reviewControls label {
+  color: #8d9789;
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.classificationContext strong {
+  font-size: 0.9rem;
+  text-transform: capitalize;
+}
+
 .reviewControls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(240px, 1.3fr);
+  gap: 16px;
+}
+
+.reviewControls label {
+  display: grid;
+  gap: 7px;
 }
 
 .reviewControls select,
 .reviewControls input {
+  width: 100%;
   min-height: 42px;
   padding: 8px 12px;
   border: 1px solid #485044;
@@ -423,17 +509,37 @@ li {
   font: inherit;
 }
 
-.splitFeedback {
-  margin: 0;
+.reviewActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.unsavedBadge {
+  margin-left: auto;
+  color: #e5bd72;
+  font-size: 0.82rem;
+}
+
+.reviewFeedback {
+  margin: -4px 0 0;
+  padding: 12px 14px;
+  border: 1px solid;
+  border-radius: 9px;
   font-weight: 600;
 }
 
-.splitFeedback.success {
+.reviewFeedback.success {
+  border-color: rgb(166 206 120 / 35%);
   color: #a6ce78;
+  background: rgb(166 206 120 / 8%);
 }
 
-.splitFeedback.error {
+.reviewFeedback.error {
+  border-color: rgb(255 158 143 / 35%);
   color: #ff9e8f;
+  background: rgb(255 158 143 / 8%);
 }
 
 @media (max-width: 720px) {
@@ -466,5 +572,25 @@ li {
 
   .summaryGrid {
     grid-template-columns: 1fr;
+  }
+
+  .reviewSectionHeader,
+  .reviewCardHeader {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .classificationContext,
+  .reviewControls {
+    grid-template-columns: 1fr;
+  }
+
+  .reviewAmount {
+    font-size: 1.1rem;
+  }
+
+  .unsavedBadge {
+    width: 100%;
+    margin-left: 0;
   }
 }

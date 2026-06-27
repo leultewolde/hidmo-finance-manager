@@ -44,7 +44,10 @@ export async function PATCH(
       body.category.trim().length === 0
     ) {
       return NextResponse.json(
-        { error: 'invalid-classification' },
+        {
+          error: 'invalid-classification',
+          message: 'Select a valid type and enter a category.',
+        },
         { status: 400 },
       )
     }
@@ -71,6 +74,15 @@ export async function PATCH(
     if (error instanceof AuthFailure) {
       return NextResponse.json({ error: error.code }, { status: error.status })
     }
-    return NextResponse.json({ error: 'correction-failed' }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: 'correction-failed',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'The correction could not be saved.',
+      },
+      { status: 400 },
+    )
   }
 }

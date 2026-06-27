@@ -245,6 +245,9 @@ export default async function DashboardPage() {
               transaction.merchantName ??
               transaction.description ??
               transaction.accountName,
+            accountName: transaction.accountName,
+            accountMask: transaction.accountMask,
+            postedDate: transaction.postedDate,
             amountMinor: transaction.normalizedAmountMinor.toString(),
             currency: transaction.currency,
             economicType: transaction.economicType,

@@ -27,3 +27,5 @@ gha-creds-*.json
 tmp/
 terraform.tfvars
 *.tfplan
+infra/environments/*/backend.tf
+infra/environments/*/backend.generated.tf

@@ -26,6 +26,18 @@ output "github_actions_workload_identity_provider" {
   value = module.github_actions_identity.provider_name
 }
 
+output "terraform_plan_ci_service_account_email" {
+  value = module.service_accounts.emails["terraform-plan-ci"]
+}
+
+output "terraform_state_bucket_name" {
+  value = module.terraform_state.bucket_name
+}
+
+output "terraform_state_prefix" {
+  value = "finance-manager/dev"
+}
+
 output "kms_key_name" {
   value = try(module.kms[0].crypto_key_name, null)
 }

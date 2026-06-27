@@ -18,6 +18,11 @@ owner_firebase_uid = "replace-me"
 github_repository  = "leultewolde/hidmo-finance-manager"
 github_actions_ref = "refs/heads/main"
 
+# Created locally first, then used by GitHub's plan-only workflow after state
+# migration.
+terraform_state_bucket_name     = "finance-manager-dev-500423-terraform-state"
+terraform_state_bucket_location = "us-east1"
+
 # These placeholders are ignored while enable_cloud_run is false.
 # After pushing the images, replace them with immutable @sha256 digests and set
 # enable_runtime_infrastructure to true.

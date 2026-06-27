@@ -66,5 +66,9 @@ main-branch images to Artifact Registry and uploads the same Terraform-ready
 digest values as a workflow artifact. It does not deploy Cloud Run or run
 `terraform apply`.
 
+The next automation step is shared Terraform state in GCS. After state is
+migrated, the `Terraform Plan` workflow can run a remote-state-backed plan from
+GitHub Actions. It is plan-only and does not apply changes.
+
 See `infra/environments/dev/README.md` for the full runbook, recovery notes,
 and post-deployment verification checklist.

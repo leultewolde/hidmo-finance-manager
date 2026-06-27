@@ -1,0 +1,6 @@
+terraform {
+  backend "gcs" {
+    bucket = "finance-manager-dev-500423-terraform-state"
+    prefix = "finance-manager/dev"
+  }
+}

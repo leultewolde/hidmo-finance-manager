@@ -15,6 +15,7 @@ import {
   hasSameOrigin,
   hasValidCsrfToken,
 } from '../../../../lib/request-security'
+import { plaidErrorCode } from '../../../../lib/transaction-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,9 +59,7 @@ export async function DELETE(
       return NextResponse.json({ error: error.code }, { status: error.status })
     }
     const code =
-      error instanceof TokenDecryptionError
-        ? error.name
-        : 'connection-disconnection-failed'
+      error instanceof TokenDecryptionError ? error.name : plaidErrorCode(error)
     logger.error(
       {
         errorCode: code,

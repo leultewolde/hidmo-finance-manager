@@ -81,6 +81,12 @@ export function plaidErrorCode(error: unknown): string {
   ) {
     return error.response.data.error_code
   }
+  if (
+    error instanceof Error &&
+    error.message === 'Connection not found for owner'
+  ) {
+    return 'CONNECTION_NOT_FOUND'
+  }
   return error instanceof Error ? error.name : 'UNKNOWN_SYNC_ERROR'
 }
 

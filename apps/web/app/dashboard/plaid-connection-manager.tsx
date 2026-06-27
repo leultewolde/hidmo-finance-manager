@@ -65,6 +65,26 @@ function syncErrorMessage(code: string | undefined) {
   }
 }
 
+function disconnectErrorMessage(code: string | undefined) {
+  switch (code) {
+    case 'TOKEN_DECRYPTION_FAILED':
+      return 'The saved Plaid connection cannot be unlocked. Restore the original LOCAL_TOKEN_ENCRYPTION_KEY, restart the app, and try again.'
+    case 'ITEM_LOGIN_REQUIRED':
+    case 'INVALID_ACCESS_TOKEN':
+    case 'ITEM_NOT_FOUND':
+      return 'Plaid no longer recognizes this connection. Its local data must be removed before reconnecting.'
+    case 'CONNECTION_NOT_FOUND':
+      return 'This connection is no longer available. Refresh the dashboard before trying again.'
+    case 'INTERNAL_SERVER_ERROR':
+    case 'RATE_LIMIT_EXCEEDED':
+      return 'Plaid could not disconnect the institution temporarily. Wait a minute, then try again.'
+    default:
+      return code === undefined
+        ? 'The institution could not be disconnected.'
+        : `The institution could not be disconnected. Plaid error: ${code}.`
+  }
+}
+
 export function PlaidConnectionManager({
   initialConnections,
 }: {
@@ -157,11 +177,7 @@ export function PlaidConnectionManager({
         const body = (await response.json().catch(() => ({}))) as {
           code?: string
         }
-        throw new Error(
-          body.code === 'TOKEN_DECRYPTION_FAILED'
-            ? 'The saved Plaid connection cannot be unlocked. Restore the original LOCAL_TOKEN_ENCRYPTION_KEY, restart the app, and try again.'
-            : 'The institution could not be disconnected.',
-        )
+        throw new Error(disconnectErrorMessage(body.code))
       }
       window.location.reload()
     } catch (error) {

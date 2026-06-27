@@ -56,6 +56,8 @@ function syncErrorMessage(code: string | undefined) {
       return 'Plaid is receiving too many requests. Wait a minute, then try again.'
     case 'INTERNAL_SERVER_ERROR':
       return 'Plaid encountered a temporary error. Wait a minute, then try again.'
+    case 'TOKEN_DECRYPTION_FAILED':
+      return 'The saved Plaid connection cannot be unlocked. Restore the original LOCAL_TOKEN_ENCRYPTION_KEY, restart the app, and try again.'
     default:
       return code === undefined
         ? 'Transactions could not be synchronized.'
@@ -152,7 +154,14 @@ export function PlaidConnectionManager({
         body: JSON.stringify({ csrfToken }),
       })
       if (!response.ok) {
-        throw new Error('The institution could not be disconnected.')
+        const body = (await response.json().catch(() => ({}))) as {
+          code?: string
+        }
+        throw new Error(
+          body.code === 'TOKEN_DECRYPTION_FAILED'
+            ? 'The saved Plaid connection cannot be unlocked. Restore the original LOCAL_TOKEN_ENCRYPTION_KEY, restart the app, and try again.'
+            : 'The institution could not be disconnected.',
+        )
       }
       window.location.reload()
     } catch (error) {

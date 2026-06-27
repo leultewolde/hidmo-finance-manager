@@ -24,3 +24,5 @@ coverage/
 # Logs and temporary files
 *.log
 tmp/
+terraform.tfvars
+*.tfplan

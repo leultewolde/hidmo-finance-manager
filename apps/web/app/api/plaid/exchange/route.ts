@@ -14,6 +14,7 @@ import {
   hasSameOrigin,
   hasValidCsrfToken,
 } from '../../../../lib/request-security'
+import { synchronizePlaidConnection } from '../../../../lib/transaction-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -60,6 +61,19 @@ export async function POST(request: NextRequest) {
       wrappingKey: getLocalTokenWrappingKey(),
     })
 
+    let initialSync = 'completed'
+    try {
+      await synchronizePlaidConnection({
+        userId: databaseOwner.id,
+        connectionId: result.connectionId,
+        provider: getPlaidProvider(),
+        repositories,
+        wrappingKey: getLocalTokenWrappingKey(),
+      })
+    } catch {
+      initialSync = 'retry_available'
+    }
+
     logger.info(
       {
         connectionId: result.connectionId,
@@ -67,7 +81,7 @@ export async function POST(request: NextRequest) {
       },
       'Plaid connection created',
     )
-    return NextResponse.json(result, { status: 201 })
+    return NextResponse.json({ ...result, initialSync }, { status: 201 })
   } catch (error) {
     if (error instanceof AuthFailure) {
       return NextResponse.json({ error: error.code }, { status: error.status })

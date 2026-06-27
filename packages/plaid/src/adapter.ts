@@ -4,8 +4,10 @@ import {
   ItemRemoveReasonCode,
   PlaidApi,
   PlaidEnvironments,
+  PersonalFinanceCategoryVersion,
   Products,
   type AccountBase,
+  type Transaction,
 } from 'plaid'
 
 export interface PlaidAccount {
@@ -29,6 +31,29 @@ export interface PlaidItemDetails {
   consentExpiresAt?: Date
 }
 
+export interface PlaidTransaction {
+  providerTransactionId: string
+  providerAccountId: string
+  pendingProviderTransactionId?: string
+  amount: number
+  currency: string
+  authorizedDate?: string
+  postedDate: string
+  merchantName?: string
+  description: string
+  pending: boolean
+  category?: string
+  categoryConfidence?: string
+}
+
+export interface PlaidTransactionSyncPage {
+  added: PlaidTransaction[]
+  modified: PlaidTransaction[]
+  removedProviderTransactionIds: string[]
+  nextCursor: string
+  hasMore: boolean
+}
+
 export interface PlaidProvider {
   createLinkToken(clientUserId: string): Promise<string>
   exchangePublicToken(publicToken: string): Promise<{
@@ -37,6 +62,10 @@ export interface PlaidProvider {
   }>
   getItem(accessToken: string): Promise<PlaidItemDetails>
   getAccounts(accessToken: string): Promise<PlaidAccount[]>
+  syncTransactions(
+    accessToken: string,
+    cursor?: string,
+  ): Promise<PlaidTransactionSyncPage>
   removeItem(accessToken: string): Promise<void>
 }
 
@@ -79,6 +108,41 @@ function mapAccount(account: AccountBase): PlaidAccount {
   }
 }
 
+function mapTransaction(transaction: Transaction): PlaidTransaction {
+  const currency = transaction.iso_currency_code
+  if (currency === null) {
+    throw new Error('Plaid transaction has no supported currency')
+  }
+
+  return {
+    providerTransactionId: transaction.transaction_id,
+    providerAccountId: transaction.account_id,
+    ...(transaction.pending_transaction_id === null
+      ? {}
+      : { pendingProviderTransactionId: transaction.pending_transaction_id }),
+    amount: transaction.amount,
+    currency,
+    ...(transaction.authorized_date === null
+      ? {}
+      : { authorizedDate: transaction.authorized_date }),
+    postedDate: transaction.date,
+    ...(transaction.merchant_name === null
+      ? {}
+      : { merchantName: transaction.merchant_name }),
+    description: transaction.name,
+    pending: transaction.pending,
+    ...(transaction.personal_finance_category?.primary === undefined
+      ? {}
+      : { category: transaction.personal_finance_category.primary }),
+    ...(transaction.personal_finance_category?.confidence_level == null
+      ? {}
+      : {
+          categoryConfidence:
+            transaction.personal_finance_category.confidence_level,
+        }),
+  }
+}
+
 export function createPlaidProvider(
   configuration: PlaidProviderConfiguration,
 ): PlaidProvider {
@@ -110,6 +174,7 @@ export function createPlaidProvider(
           Products.Investments,
           Products.Liabilities,
         ],
+        transactions: { days_requested: 180 },
         user: { client_user_id: clientUserId },
       })
 
@@ -146,6 +211,28 @@ export function createPlaidProvider(
     async getAccounts(accessToken) {
       const response = await client.accountsGet({ access_token: accessToken })
       return response.data.accounts.map(mapAccount)
+    },
+
+    async syncTransactions(accessToken, cursor) {
+      const response = await client.transactionsSync({
+        access_token: accessToken,
+        ...(cursor === undefined ? {} : { cursor }),
+        count: 500,
+        options: {
+          include_original_description: false,
+          personal_finance_category_version: PersonalFinanceCategoryVersion.V2,
+        },
+      })
+
+      return {
+        added: response.data.added.map(mapTransaction),
+        modified: response.data.modified.map(mapTransaction),
+        removedProviderTransactionIds: response.data.removed.map(
+          (transaction) => transaction.transaction_id,
+        ),
+        nextCursor: response.data.next_cursor,
+        hasMore: response.data.has_more,
+      }
     },
 
     async removeItem(accessToken) {

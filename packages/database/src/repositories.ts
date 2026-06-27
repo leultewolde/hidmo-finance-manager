@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
 
 import type {
   Account,
@@ -145,6 +145,9 @@ export class ConnectionRepository {
         id: connections.id,
         institutionName: institutions.name,
         status: connections.status,
+        lastSuccessfulSyncAt: connections.lastSuccessfulSyncAt,
+        errorCode: connections.errorCode,
+        reconnectRequiredAt: connections.reconnectRequiredAt,
         createdAt: connections.createdAt,
       })
       .from(connections)
@@ -307,6 +310,25 @@ export class ConnectionRepository {
       }
     })
   }
+
+  async recordSyncError(
+    userId: string,
+    connectionId: string,
+    errorCode: string,
+    reconnectRequired: boolean,
+  ) {
+    await this.db
+      .update(connections)
+      .set({
+        status: reconnectRequired ? 'attention_required' : 'active',
+        errorCode,
+        reconnectRequiredAt: reconnectRequired ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(eq(connections.id, connectionId), eq(connections.userId, userId)),
+      )
+  }
 }
 
 export class AccountRepository {
@@ -385,6 +407,202 @@ export class TransactionRepository {
         category: row.category,
       })),
     }
+  }
+
+  async listRecentForUser(userId: string, limit = 100) {
+    return this.db
+      .select({
+        id: transactions.id,
+        accountName: accounts.name,
+        accountMask: accounts.mask,
+        postedDate: transactions.postedDate,
+        merchantName: transactions.merchantName,
+        description: transactions.originalDescription,
+        normalizedAmountMinor: transactions.normalizedAmountMinor,
+        currency: transactions.currency,
+        state: transactions.state,
+        category: transactions.appCategory,
+      })
+      .from(transactions)
+      .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+      .where(
+        and(eq(transactions.userId, userId), eq(transactions.removed, false)),
+      )
+      .orderBy(desc(transactions.postedDate), desc(transactions.createdAt))
+      .limit(limit)
+  }
+
+  async applyPlaidSync(input: {
+    userId: string
+    connectionId: string
+    startingCursor: string | null
+    finalCursor: string
+    added: readonly PlaidTransactionInput[]
+    modified: readonly PlaidTransactionInput[]
+    removedProviderTransactionIds: readonly string[]
+  }) {
+    return this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${input.connectionId}))`,
+      )
+
+      const [connection] = await tx
+        .select()
+        .from(connections)
+        .where(
+          and(
+            eq(connections.id, input.connectionId),
+            eq(connections.userId, input.userId),
+            eq(connections.status, 'active'),
+          ),
+        )
+        .limit(1)
+
+      if (connection === undefined) {
+        throw new Error('Connection not found for owner')
+      }
+      if (connection.transactionCursor !== input.startingCursor) {
+        throw new Error('Transaction cursor changed during synchronization')
+      }
+
+      const accountRows = await tx
+        .select({
+          id: accounts.id,
+          providerAccountId: accounts.providerAccountId,
+        })
+        .from(accounts)
+        .where(
+          and(
+            eq(accounts.userId, input.userId),
+            eq(accounts.connectionId, input.connectionId),
+            isNotNull(accounts.providerAccountId),
+          ),
+        )
+      const accountIds = new Map(
+        accountRows.map((account) => [
+          account.providerAccountId as string,
+          account.id,
+        ]),
+      )
+
+      for (const transaction of [...input.added, ...input.modified]) {
+        const accountId = accountIds.get(transaction.providerAccountId)
+        if (accountId === undefined) {
+          throw new Error('Plaid transaction references an unknown account')
+        }
+
+        if (transaction.pendingProviderTransactionId !== undefined) {
+          await tx
+            .update(transactions)
+            .set({ removed: true, updatedAt: new Date() })
+            .where(
+              and(
+                eq(transactions.userId, input.userId),
+                inArray(transactions.accountId, [...accountIds.values()]),
+                eq(
+                  transactions.providerTransactionId,
+                  transaction.pendingProviderTransactionId,
+                ),
+              ),
+            )
+        }
+
+        const [existing] = await tx
+          .select()
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.accountId, accountId),
+              eq(
+                transactions.providerTransactionId,
+                transaction.providerTransactionId,
+              ),
+            ),
+          )
+          .limit(1)
+
+        const providerValues = {
+          pendingProviderTransactionId:
+            transaction.pendingProviderTransactionId ?? null,
+          authorizedDate: transaction.authorizedDate ?? null,
+          postedDate: transaction.postedDate,
+          rawProviderAmountMinor: transaction.rawProviderAmountMinor,
+          normalizedAmountMinor: transaction.normalizedAmountMinor,
+          currency: transaction.currency,
+          merchantName: transaction.merchantName ?? null,
+          originalDescription: transaction.originalDescription,
+          state: transaction.state,
+          removed: false,
+          providerCategory: transaction.providerCategory ?? null,
+          providerCategoryConfidenceBps:
+            transaction.providerCategoryConfidenceBps ?? null,
+          updatedAt: new Date(),
+        } as const
+
+        if (existing === undefined) {
+          await tx.insert(transactions).values({
+            id: randomUUID(),
+            userId: input.userId,
+            accountId,
+            providerTransactionId: transaction.providerTransactionId,
+            ...providerValues,
+            economicType: transaction.economicType,
+            appCategory: transaction.appCategory,
+            classificationConfidenceBps:
+              transaction.providerCategoryConfidenceBps ?? null,
+            deduplicationFingerprint: transaction.deduplicationFingerprint,
+          })
+        } else {
+          await tx
+            .update(transactions)
+            .set({
+              ...providerValues,
+              ...(existing.userReviewed
+                ? {}
+                : {
+                    economicType: transaction.economicType,
+                    appCategory: transaction.appCategory,
+                    classificationConfidenceBps:
+                      transaction.providerCategoryConfidenceBps ?? null,
+                  }),
+            })
+            .where(eq(transactions.id, existing.id))
+        }
+      }
+
+      if (input.removedProviderTransactionIds.length > 0) {
+        await tx
+          .update(transactions)
+          .set({ removed: true, updatedAt: new Date() })
+          .where(
+            and(
+              eq(transactions.userId, input.userId),
+              inArray(transactions.accountId, [...accountIds.values()]),
+              inArray(
+                transactions.providerTransactionId,
+                input.removedProviderTransactionIds,
+              ),
+            ),
+          )
+      }
+
+      await tx
+        .update(connections)
+        .set({
+          transactionCursor: input.finalCursor,
+          lastSuccessfulSyncAt: new Date(),
+          errorCode: null,
+          reconnectRequiredAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(connections.id, input.connectionId))
+
+      return {
+        added: input.added.length,
+        modified: input.modified.length,
+        removed: input.removedProviderTransactionIds.length,
+      }
+    })
   }
 
   async replaceSplits(
@@ -583,6 +801,49 @@ export class TaskExecutionRepository {
 
     return inserted.length === 1
   }
+
+  async complete(id: string) {
+    await this.db
+      .update(taskExecutions)
+      .set({
+        status: 'completed',
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(taskExecutions.id, id))
+  }
+
+  async fail(id: string, errorCode: string, attemptCount: number) {
+    await this.db
+      .update(taskExecutions)
+      .set({
+        status: 'failed',
+        lastErrorCode: errorCode,
+        attemptCount,
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(taskExecutions.id, id))
+  }
+}
+
+export interface PlaidTransactionInput {
+  providerTransactionId: string
+  providerAccountId: string
+  pendingProviderTransactionId?: string
+  authorizedDate?: string
+  postedDate: string
+  rawProviderAmountMinor: bigint
+  normalizedAmountMinor: bigint
+  currency: 'USD' | 'EUR'
+  merchantName?: string
+  originalDescription: string
+  state: 'pending' | 'posted'
+  providerCategory?: string
+  providerCategoryConfidenceBps?: number
+  economicType: 'income' | 'expense' | 'refund' | 'unknown'
+  appCategory: string
+  deduplicationFingerprint: string
 }
 
 export function createRepositories(db: Database) {

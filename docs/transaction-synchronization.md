@@ -68,7 +68,7 @@ stored for reconciliation.
 
 ## Retries and locking
 
-The local runner:
+The current local/web runner:
 
 - prevents overlapping syncs for one owner/connection in the current process;
 - uses a PostgreSQL advisory transaction lock while applying updates;
@@ -77,8 +77,14 @@ The local runner:
 - records every run in `task_executions`;
 - records safe failure codes without transaction descriptions or provider IDs.
 
-Cloud Tasks and distributed execution replace the local runner during the GCP
-deployment milestone.
+Cloud Tasks delivery is now proven in the GCP development environment. Milestone
+9 moves Plaid synchronization onto that worker path:
+
+- web requests enqueue sync work and return quickly;
+- the worker runs `/transactions/sync`;
+- task status is visible in the dashboard;
+- Cloud Tasks retries are idempotent;
+- webhooks and scheduled reconciliation enqueue the same task type.
 
 ## Current scope
 

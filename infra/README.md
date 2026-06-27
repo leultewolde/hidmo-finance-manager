@@ -1,6 +1,7 @@
 # Infrastructure
 
-This directory holds the Terraform foundation for Milestone 8.
+This directory holds the Terraform foundation completed in Milestone 8 and used
+by later milestones.
 
 The goal of this phase is to define the development GCP shape for:
 

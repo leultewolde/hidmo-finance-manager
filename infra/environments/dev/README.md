@@ -1,6 +1,6 @@
 # Dev Environment Runbook
 
-This is the first GCP deployment environment for Milestone 8.
+This is the first GCP deployment environment created in Milestone 8.
 
 Use this directory when you are ready to review and eventually apply the
 Terraform plan.

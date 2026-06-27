@@ -301,8 +301,8 @@ module "cloud_run" {
   migration_service_account_email = module.service_accounts.emails["migration-runtime"]
   web_max_instance_count          = var.web_max_instance_count
   worker_max_instance_count       = var.worker_max_instance_count
-  vpc_network_self_link           = module.network[0].network_self_link
-  vpc_subnetwork_self_link        = module.network[0].subnet_self_link
+  vpc_network_self_link           = module.network[0].network_id
+  vpc_subnetwork_self_link        = module.network[0].subnet_id
   web_environment = merge(var.web_environment, {
     FIREBASE_OWNER_UID  = var.owner_firebase_uid
     FIREBASE_PROJECT_ID = var.project_id

@@ -1,0 +1,166 @@
+name: Terraform Plan
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/terraform-plan.yml'
+      - 'infra/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-plan-dev-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TERRAFORM_VERSION: 1.12.2
+  TERRAFORM_WORKING_DIRECTORY: infra/environments/dev
+  TF_IN_AUTOMATION: 'true'
+  TF_INPUT: 'false'
+  TF_VAR_project_id: finance-manager-dev-500423
+  TF_VAR_region: us-east1
+  TF_VAR_create_budget: 'false'
+  TF_VAR_enable_runtime_infrastructure: ${{ vars.DEV_ENABLE_RUNTIME_INFRASTRUCTURE || 'true' }}
+  TF_VAR_enable_cloud_run: ${{ vars.DEV_ENABLE_CLOUD_RUN || 'true' }}
+  TF_VAR_billing_account_id: ${{ vars.GCP_BILLING_ACCOUNT_ID }}
+  TF_VAR_owner_firebase_uid: ${{ vars.FIREBASE_OWNER_UID }}
+  TF_VAR_web_image: ${{ vars.DEV_WEB_IMAGE }}
+  TF_VAR_worker_image: ${{ vars.DEV_WORKER_IMAGE }}
+  TF_VAR_migration_image: ${{ vars.DEV_MIGRATION_IMAGE }}
+
+jobs:
+  disabled:
+    name: Terraform plan disabled
+    if: github.event_name == 'push' && vars.TERRAFORM_PLAN_ENABLED != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain skipped plan
+        run: |
+          {
+            echo "## Terraform plan skipped"
+            echo
+            echo "Set repository variable \`TERRAFORM_PLAN_ENABLED=true\` after migrating Terraform state to GCS."
+            echo
+            echo "This workflow intentionally runs \`terraform plan\` only. It never runs \`terraform apply\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  plan:
+    name: Terraform plan dev
+    if: github.event_name == 'workflow_dispatch' || vars.TERRAFORM_PLAN_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate required repository variables
+        env:
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_TERRAFORM_PLAN_SERVICE_ACCOUNT: ${{ vars.GCP_TERRAFORM_PLAN_SERVICE_ACCOUNT }}
+          TERRAFORM_STATE_BUCKET: ${{ vars.TERRAFORM_STATE_BUCKET }}
+          TERRAFORM_STATE_PREFIX: ${{ vars.TERRAFORM_STATE_PREFIX }}
+          GCP_BILLING_ACCOUNT_ID: ${{ vars.GCP_BILLING_ACCOUNT_ID }}
+          FIREBASE_OWNER_UID: ${{ vars.FIREBASE_OWNER_UID }}
+          DEV_WEB_IMAGE: ${{ vars.DEV_WEB_IMAGE }}
+          DEV_WORKER_IMAGE: ${{ vars.DEV_WORKER_IMAGE }}
+          DEV_MIGRATION_IMAGE: ${{ vars.DEV_MIGRATION_IMAGE }}
+        run: |
+          missing=0
+          for name in \
+            GCP_WORKLOAD_IDENTITY_PROVIDER \
+            GCP_TERRAFORM_PLAN_SERVICE_ACCOUNT \
+            TERRAFORM_STATE_BUCKET \
+            TERRAFORM_STATE_PREFIX \
+            GCP_BILLING_ACCOUNT_ID \
+            FIREBASE_OWNER_UID \
+            DEV_WEB_IMAGE \
+            DEV_WORKER_IMAGE \
+            DEV_MIGRATION_IMAGE
+          do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository variable: ${name}"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_TERRAFORM_PLAN_SERVICE_ACCOUNT }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Write generated backend config
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        env:
+          TERRAFORM_STATE_BUCKET: ${{ vars.TERRAFORM_STATE_BUCKET }}
+          TERRAFORM_STATE_PREFIX: ${{ vars.TERRAFORM_STATE_PREFIX }}
+        run: |
+          cat > backend.generated.tf <<EOF
+          terraform {
+            backend "gcs" {
+              bucket = "${TERRAFORM_STATE_BUCKET}"
+              prefix = "${TERRAFORM_STATE_PREFIX}"
+            }
+          }
+          EOF
+
+      - name: Initialize Terraform
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        run: terraform init -input=false
+
+      - name: Validate Terraform
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        run: terraform validate
+
+      - name: Run Terraform plan
+        id: plan
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        run: |
+          set +e
+          terraform plan -input=false -no-color -detailed-exitcode -out=tfplan 2>&1 | tee terraform-plan.log
+          exit_code="${PIPESTATUS[0]}"
+          set -e
+
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+
+          if [ "$exit_code" -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: Summarize plan result
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        env:
+          PLAN_EXIT_CODE: ${{ steps.plan.outputs.exit_code }}
+        run: |
+          {
+            echo "## Terraform plan result"
+            echo
+            if [ "$PLAN_EXIT_CODE" = "0" ]; then
+              echo "No infrastructure changes detected."
+            elif [ "$PLAN_EXIT_CODE" = "2" ]; then
+              echo "Terraform detected pending infrastructure changes."
+              echo
+              echo "Review the workflow logs. This workflow did not apply anything."
+            else
+              echo "Terraform plan failed."
+            fi
+            echo
+            echo "Backend bucket: \`${{ vars.TERRAFORM_STATE_BUCKET }}\`"
+            echo "Backend prefix: \`${{ vars.TERRAFORM_STATE_PREFIX }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

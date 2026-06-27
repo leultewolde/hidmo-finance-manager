@@ -394,6 +394,152 @@ If sign-in returns `invalid-origin`, inspect Cloud Run forwarding/origin
 headers. If sign-in returns `invalid-session`, inspect Firebase Auth IAM on
 `web-runtime`.
 
+## Stage G: migrate Terraform state to GCS
+
+Do this before allowing GitHub Actions to run Terraform plans against the dev
+environment.
+
+Why this exists:
+
+- your current Terraform state is local on your laptop;
+- GitHub Actions cannot safely plan or deploy against local-only state;
+- a GCS backend gives both your laptop and GitHub Actions one shared source of
+  truth;
+- this stage still does not enable automatic `terraform apply`.
+
+### Step 1: create the remote-state foundation
+
+From this directory, while still using local state:
+
+```bash
+terraform plan -out=remote-state-foundation.tfplan
+terraform show remote-state-foundation.tfplan
+```
+
+Expected plan shape:
+
+- enable `storage.googleapis.com` if it is not already enabled;
+- create service account `terraform-plan-ci`;
+- grant read-only project permissions needed for refresh/plan;
+- create the GCS bucket `finance-manager-dev-500423-terraform-state`;
+- enable object versioning on the bucket;
+- grant `terraform-plan-ci` access to read/write Terraform state objects;
+- add `terraform-plan-ci` to the existing GitHub Workload Identity trust;
+- no Cloud Run service changes unless image values changed separately;
+- no destroys.
+
+After review:
+
+```bash
+terraform apply remote-state-foundation.tfplan
+```
+
+### Step 2: capture outputs for GitHub
+
+Run:
+
+```bash
+terraform output -raw github_actions_workload_identity_provider
+terraform output -raw terraform_plan_ci_service_account_email
+terraform output -raw terraform_state_bucket_name
+terraform output -raw terraform_state_prefix
+```
+
+You will use these values in GitHub repository variables.
+
+### Step 3: back up local state
+
+Do not skip this.
+
+```bash
+cp terraform.tfstate terraform.tfstate.local-backup
+cp terraform.tfstate.backup terraform.tfstate.backup.local-backup
+```
+
+These files are ignored by Git. Do not paste them into chat.
+
+### Step 4: create the local backend file
+
+```bash
+cp backend.tf.example backend.tf
+```
+
+`backend.tf` is intentionally ignored by Git. The GitHub workflow generates its
+own backend config from repository variables.
+
+### Step 5: migrate state
+
+Run:
+
+```bash
+terraform init -migrate-state
+```
+
+Terraform should ask whether to copy existing local state to the new GCS
+backend. Answer:
+
+```text
+yes
+```
+
+Then confirm the migrated state is usable:
+
+```bash
+terraform plan -out=post-state-migration.tfplan
+terraform show post-state-migration.tfplan
+```
+
+Expected:
+
+- ideally no changes;
+- no destroys;
+- no unexpected Cloud Run updates.
+
+### Step 6: configure GitHub plan-only workflow
+
+Set these GitHub repository variables:
+
+GitHub repository
+→ Settings
+→ Secrets and variables
+→ Actions
+→ Variables
+
+```text
+TERRAFORM_PLAN_ENABLED=true
+GCP_WORKLOAD_IDENTITY_PROVIDER=<terraform output>
+GCP_TERRAFORM_PLAN_SERVICE_ACCOUNT=<terraform output>
+TERRAFORM_STATE_BUCKET=<terraform output>
+TERRAFORM_STATE_PREFIX=<terraform output>
+GCP_BILLING_ACCOUNT_ID=0149A2-6F2160-329E77
+FIREBASE_OWNER_UID=<your Firebase UID>
+DEV_ENABLE_RUNTIME_INFRASTRUCTURE=true
+DEV_ENABLE_CLOUD_RUN=true
+DEV_WEB_IMAGE=<current web_image digest from terraform.tfvars>
+DEV_WORKER_IMAGE=<current worker_image digest from terraform.tfvars>
+DEV_MIGRATION_IMAGE=<current migration_image digest from terraform.tfvars>
+```
+
+Do not add Plaid secrets, database URLs, database passwords, Terraform state,
+or service account keys to GitHub.
+
+The `Terraform Plan` workflow:
+
+- authenticates through Workload Identity Federation;
+- uses the GCS backend;
+- runs `terraform init`, `terraform validate`, and `terraform plan`;
+- never runs `terraform apply`;
+- reports whether pending infrastructure changes exist.
+
+To test manually:
+
+GitHub repository
+→ Actions
+→ Terraform Plan
+→ Run workflow
+
+Run it from `main` after state migration.
+
 ## Important notes
 
 - Do not put secret values in `terraform.tfvars`.

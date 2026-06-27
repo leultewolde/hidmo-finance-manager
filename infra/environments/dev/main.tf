@@ -37,6 +37,17 @@ locals {
         "roles/artifactregistry.writer",
       ]
     }
+    terraform-plan-ci = {
+      display_name = "Finance Manager Terraform plan CI"
+      description  = "Runs read-only Terraform plans against remote state."
+      project_roles = [
+        "roles/cloudkms.viewer",
+        "roles/iam.securityReviewer",
+        "roles/secretmanager.viewer",
+        "roles/serviceusage.serviceUsageViewer",
+        "roles/viewer",
+      ]
+    }
   }
 
   secret_accessors = {
@@ -195,6 +206,7 @@ module "project_services" {
     "secretmanager.googleapis.com",
     "servicenetworking.googleapis.com",
     "sqladmin.googleapis.com",
+    "storage.googleapis.com",
     "aiplatform.googleapis.com",
   ])
 }
@@ -231,6 +243,24 @@ module "github_actions_identity" {
   github_repository    = var.github_repository
   github_ref           = var.github_actions_ref
   service_account_name = module.service_accounts.names["deploy-ci"]
+  additional_service_account_names = {
+    terraform-plan-ci = module.service_accounts.names["terraform-plan-ci"]
+  }
+
+  depends_on = [
+    module.project_services,
+    module.service_accounts,
+  ]
+}
+
+module "terraform_state" {
+  source = "../../modules/terraform-state"
+
+  project_id            = var.project_id
+  bucket_name           = var.terraform_state_bucket_name
+  location              = var.terraform_state_bucket_location
+  object_admin_members  = ["serviceAccount:${module.service_accounts.emails["terraform-plan-ci"]}"]
+  bucket_reader_members = ["serviceAccount:${module.service_accounts.emails["terraform-plan-ci"]}"]
 
   depends_on = [
     module.project_services,

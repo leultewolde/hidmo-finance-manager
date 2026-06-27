@@ -37,3 +37,9 @@ variable "service_account_name" {
   type        = string
   description = "Full resource name of the service account GitHub Actions may impersonate."
 }
+
+variable "additional_service_account_names" {
+  type        = map(string)
+  description = "Additional full service account resource names GitHub Actions may impersonate through this provider, keyed by stable account name."
+  default     = {}
+}

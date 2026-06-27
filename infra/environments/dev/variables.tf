@@ -181,6 +181,18 @@ variable "github_actions_workload_identity_provider_id" {
   default     = "github"
 }
 
+variable "terraform_state_bucket_name" {
+  type        = string
+  description = "Globally unique GCS bucket name for dev Terraform state."
+  default     = "finance-manager-dev-500423-terraform-state"
+}
+
+variable "terraform_state_bucket_location" {
+  type        = string
+  description = "GCS bucket location for dev Terraform state."
+  default     = "us-east1"
+}
+
 variable "sql_instance_name" {
   type        = string
   description = "Cloud SQL instance name."

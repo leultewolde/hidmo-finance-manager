@@ -66,16 +66,33 @@ The apply job:
 3. waits for web readiness to return HTTP 200;
 4. confirms the worker still rejects anonymous access with HTTP 403;
 5. updates `DEV_WEB_IMAGE`, `DEV_WORKER_IMAGE`, and `DEV_MIGRATION_IMAGE` to
-   the deployed image digests.
+   the deployed image digests if the repository has an `ACTIONS_VARIABLES_TOKEN`
+   secret.
 
 After it passes, future Terraform plans should not propose rolling back to an
 older image.
+
+## Optional: automatic digest recording
+
+GitHub's built-in `GITHUB_TOKEN` cannot update repository variables in this
+repository. To let the deploy workflow record deployed image digests
+automatically, create a fine-grained token with Variables write access to this
+repository and store it as an Actions secret:
+
+```text
+ACTIONS_VARIABLES_TOKEN
+```
+
+Without that secret, deployment still succeeds. The workflow summary prints the
+exact `DEV_WEB_IMAGE`, `DEV_WORKER_IMAGE`, and `DEV_MIGRATION_IMAGE` values to
+set manually.
 
 ## If it fails
 
 - If smoke checks fail with a transient HTTP 503, rerun only after checking the
   Cloud Run logs.
-- If the repository-variable update fails, manually set the three `DEV_*_IMAGE`
-  repository variables to the image digests shown in the workflow summary.
+- If the repository-variable update is skipped, manually set the three
+  `DEV_*_IMAGE` repository variables to the image digests shown in the workflow
+  summary.
 - If Terraform reports unrelated infrastructure changes, stop and use the
   normal PR Terraform plan process instead.

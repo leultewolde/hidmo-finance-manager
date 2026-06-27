@@ -41,4 +41,29 @@ describe('environment parsing', () => {
       }).WORKER_PORT,
     ).toBe(4100)
   })
+
+  it('uses the Cloud Run port when an app-specific port is absent', () => {
+    expect(
+      getWebEnvironment({
+        ...baseEnvironment,
+        PORT: '8080',
+      }).WEB_PORT,
+    ).toBe(8080)
+    expect(
+      getWorkerEnvironment({
+        ...baseEnvironment,
+        PORT: '8080',
+      }).WORKER_PORT,
+    ).toBe(8080)
+  })
+
+  it('prefers an explicit app-specific port over the Cloud Run port', () => {
+    expect(
+      getWorkerEnvironment({
+        ...baseEnvironment,
+        PORT: '8080',
+        WORKER_PORT: '4100',
+      }).WORKER_PORT,
+    ).toBe(4100)
+  })
 })

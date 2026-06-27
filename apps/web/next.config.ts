@@ -3,6 +3,7 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   output: 'standalone',
   transpilePackages: [
+    '@hidmo/classification',
     '@hidmo/config',
     '@hidmo/contracts',
     '@hidmo/database',

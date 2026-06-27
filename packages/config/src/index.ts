@@ -33,11 +33,17 @@ export type WorkerEnvironment = z.infer<typeof workerEnvironmentSchema>
 export function getWebEnvironment(
   environment: NodeJS.ProcessEnv = process.env,
 ): WebEnvironment {
-  return webEnvironmentSchema.parse(environment)
+  return webEnvironmentSchema.parse({
+    ...environment,
+    WEB_PORT: environment.WEB_PORT ?? environment.PORT,
+  })
 }
 
 export function getWorkerEnvironment(
   environment: NodeJS.ProcessEnv = process.env,
 ): WorkerEnvironment {
-  return workerEnvironmentSchema.parse(environment)
+  return workerEnvironmentSchema.parse({
+    ...environment,
+    WORKER_PORT: environment.WORKER_PORT ?? environment.PORT,
+  })
 }

@@ -96,8 +96,8 @@ cp .env.example .env
 pnpm dev
 ```
 
-`pnpm dev` starts local PostgreSQL, waits for it to become healthy, and then
-starts:
+`pnpm dev` starts local PostgreSQL, waits for it to become healthy, applies
+pending database migrations, and then starts:
 
 - web application: <http://localhost:3000>
 - worker service: <http://localhost:3001>

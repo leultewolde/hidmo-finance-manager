@@ -43,6 +43,31 @@ describe('classification precedence', () => {
       ]),
     ).toMatchObject({ source: 'rule', category: 'Household' })
   })
+
+  it('rejects direction-incompatible rule and provider suggestions', () => {
+    expect(
+      classifyTransaction(
+        {
+          ...input,
+          amountMinor: 1_000n,
+          providerCategory: 'GENERAL_MERCHANDISE',
+        },
+        [
+          {
+            id: 'invalid-expense-rule',
+            priority: 1,
+            merchantContains: 'example',
+            economicType: 'expense',
+            category: 'Invalid expense',
+          },
+        ],
+      ),
+    ).toMatchObject({
+      source: 'fallback',
+      economicType: 'income',
+      category: 'Uncategorized',
+    })
+  })
 })
 
 describe('transfer matching', () => {

@@ -709,6 +709,30 @@ export class TransactionRepository {
     },
   ) {
     await this.db.transaction(async (tx) => {
+      const [transaction] = await tx
+        .select({
+          amountMinor: transactions.normalizedAmountMinor,
+        })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.id, transactionId),
+            eq(transactions.userId, userId),
+            eq(transactions.removed, false),
+          ),
+        )
+        .limit(1)
+      if (transaction === undefined) {
+        throw new Error('Transaction not found for owner')
+      }
+      if (
+        ((input.economicType === 'income' || input.economicType === 'refund') &&
+          transaction.amountMinor <= 0n) ||
+        (input.economicType === 'expense' && transaction.amountMinor >= 0n)
+      ) {
+        throw new Error('Classification does not match transaction direction')
+      }
+
       const updated = await tx
         .update(transactions)
         .set({
@@ -726,9 +750,7 @@ export class TransactionRepository {
           ),
         )
         .returning({ id: transactions.id })
-      if (updated.length !== 1) {
-        throw new Error('Transaction not found for owner')
-      }
+      if (updated.length !== 1) throw new Error('Transaction update failed')
 
       await tx.delete(metricSnapshots).where(eq(metricSnapshots.userId, userId))
       await tx.insert(auditEvents).values({

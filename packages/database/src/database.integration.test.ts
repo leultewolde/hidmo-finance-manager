@@ -559,5 +559,13 @@ describe('database constraints and transactions', () => {
       userReviewed: true,
       classificationConfidenceBps: 10_000,
     })
+
+    await expect(
+      repositories.transactions.correctForUser(
+        syntheticIds.user,
+        transactionId,
+        { economicType: 'income', category: 'Invalid direction' },
+      ),
+    ).rejects.toThrow('does not match transaction direction')
   })
 })

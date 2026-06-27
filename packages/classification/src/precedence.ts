@@ -67,6 +67,19 @@ function matchesRule(rule: ClassificationRule, input: ClassificationInput) {
   )
 }
 
+export function isDirectionCompatible(
+  economicType: EconomicType,
+  amountMinor: bigint,
+) {
+  if (economicType === 'income' || economicType === 'refund') {
+    return amountMinor > 0n
+  }
+  if (economicType === 'expense') {
+    return amountMinor < 0n
+  }
+  return true
+}
+
 export function classifyTransaction(
   input: ClassificationInput,
   rules: readonly ClassificationRule[],
@@ -82,7 +95,11 @@ export function classifyTransaction(
 
   const matchingRule = [...rules]
     .sort((left, right) => left.priority - right.priority)
-    .find((rule) => matchesRule(rule, input))
+    .find(
+      (rule) =>
+        matchesRule(rule, input) &&
+        isDirectionCompatible(rule.economicType, input.amountMinor),
+    )
   if (matchingRule !== undefined) {
     return {
       economicType: matchingRule.economicType,
@@ -97,7 +114,10 @@ export function classifyTransaction(
     input.providerCategory === undefined
       ? undefined
       : providerCategoryMap[input.providerCategory]
-  if (provider !== undefined) {
+  if (
+    provider !== undefined &&
+    isDirectionCompatible(provider.economicType, input.amountMinor)
+  ) {
     return {
       ...provider,
       confidenceBps: 7_000,

@@ -88,14 +88,24 @@ export default async function DashboardPage() {
   const usdTransactions = transactionDetails.transactions.filter(
     (transaction) => transaction.currency === 'USD',
   )
-  const reviewedTransactions = usdTransactions.filter(
+  const calculationTransactions = usdTransactions.map((transaction) => {
+    const incompatible =
+      ((transaction.economicType === 'income' ||
+        transaction.economicType === 'refund') &&
+        transaction.amountMinor <= 0n) ||
+      (transaction.economicType === 'expense' && transaction.amountMinor >= 0n)
+    return incompatible
+      ? { ...transaction, economicType: 'unknown' as const }
+      : transaction
+  })
+  const reviewedTransactions = calculationTransactions.filter(
     (transaction) => transaction.reviewed,
   )
   const reviewedIds = new Set(
     reviewedTransactions.map((transaction) => transaction.id),
   )
   const allCashFlow = calculateCashFlow(
-    usdTransactions,
+    calculationTransactions,
     { startDate: monthStart, endDate: monthEnd },
     transactionDetails.splits,
   ).value

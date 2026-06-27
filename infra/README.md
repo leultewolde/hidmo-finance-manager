@@ -70,10 +70,12 @@ The next automation step is shared Terraform state in GCS. After state is
 migrated, the `Terraform Plan` workflow can run a remote-state-backed plan from
 GitHub Actions. It is plan-only and does not apply changes.
 
-Manual deployments are handled by the `Manual Deploy Dev` workflow after the
-`dev` GitHub environment has required reviewers configured. It is
-`workflow_dispatch` only, restricts applies to Cloud Run image updates, and
-does not run unattended deployments.
+Normal development deployments are handled by the `Manual Deploy Dev` workflow
+after the `dev` GitHub environment has required reviewers configured. It is
+`workflow_dispatch` only, restricts applies to Cloud Run image updates, updates
+the deployed image repository variables after successful smoke checks, and does
+not run unattended deployments.
 
-See `infra/environments/dev/README.md` for the full runbook, recovery notes,
-and post-deployment verification checklist.
+See `docs/normal-dev-deploy.md` for the concise day-to-day process. See
+`infra/environments/dev/README.md` for the full runbook, recovery notes, and
+post-deployment verification checklist.

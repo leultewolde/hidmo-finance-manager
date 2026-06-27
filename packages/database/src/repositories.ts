@@ -51,6 +51,10 @@ export class UserRepository {
 
   async ensureOwner(firebaseUid: string, email: string) {
     return this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext('hidmo-single-owner'))`,
+      )
+
       const [existing] = await tx
         .select()
         .from(users)

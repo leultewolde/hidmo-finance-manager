@@ -423,6 +423,19 @@ li {
   font: inherit;
 }
 
+.splitFeedback {
+  margin: 0;
+  font-weight: 600;
+}
+
+.splitFeedback.success {
+  color: #a6ce78;
+}
+
+.splitFeedback.error {
+  color: #ff9e8f;
+}
+
 @media (max-width: 720px) {
   main {
     width: min(100% - 28px, 1120px);

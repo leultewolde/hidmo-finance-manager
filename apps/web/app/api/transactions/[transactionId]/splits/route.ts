@@ -37,7 +37,13 @@ async function replace(
 
   const values = splits === undefined ? body.splits : splits
   if (!Array.isArray(values)) {
-    return NextResponse.json({ error: 'invalid-splits' }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: 'invalid-splits',
+        message: 'Provide at least two valid split entries.',
+      },
+      { status: 400 },
+    )
   }
   const parsed = values.map((value) => {
     if (
@@ -92,7 +98,16 @@ export async function PUT(
     if (error instanceof AuthFailure) {
       return NextResponse.json({ error: error.code }, { status: error.status })
     }
-    return NextResponse.json({ error: 'invalid-splits' }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: 'invalid-splits',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'The split values are invalid.',
+      },
+      { status: 400 },
+    )
   }
 }
 
@@ -106,6 +121,13 @@ export async function DELETE(
     if (error instanceof AuthFailure) {
       return NextResponse.json({ error: error.code }, { status: error.status })
     }
-    return NextResponse.json({ error: 'split-removal-failed' }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: 'split-removal-failed',
+        message:
+          error instanceof Error ? error.message : 'Split removal failed.',
+      },
+      { status: 400 },
+    )
   }
 }

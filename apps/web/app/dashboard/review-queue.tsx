@@ -50,6 +50,10 @@ function TransactionEditor({
   const [economicType, setEconomicType] = useState(transaction.economicType)
   const [category, setCategory] = useState(transaction.category)
   const [working, setWorking] = useState(false)
+  const [splitFeedback, setSplitFeedback] = useState<{
+    kind: 'success' | 'error'
+    message: string
+  } | null>(null)
 
   async function save() {
     setWorking(true)
@@ -85,51 +89,130 @@ function TransactionEditor({
   }
 
   async function split() {
+    setSplitFeedback(null)
     const firstCategory = window.prompt('First split category')
-    if (firstCategory === null || firstCategory.trim() === '') return
+    if (firstCategory === null) return
+    if (firstCategory.trim() === '') {
+      setSplitFeedback({
+        kind: 'error',
+        message: 'The first split category is required.',
+      })
+      return
+    }
     const firstAmount = window.prompt('First split amount in dollars')
     if (firstAmount === null) return
     const cents = Math.round(Number(firstAmount) * 100)
-    if (!Number.isFinite(cents) || cents <= 0) return
+    if (!Number.isFinite(cents) || cents <= 0) {
+      setSplitFeedback({
+        kind: 'error',
+        message: 'Enter a positive dollar amount, such as 20 or 20.50.',
+      })
+      return
+    }
 
     const total = BigInt(transaction.amountMinor)
     const signedFirst = total < 0n ? -BigInt(cents) : BigInt(cents)
     const remainder = total - signedFirst
-    if (remainder === 0n) return
+    if (
+      remainder === 0n ||
+      (total < 0n && remainder > 0n) ||
+      (total > 0n && remainder < 0n)
+    ) {
+      setSplitFeedback({
+        kind: 'error',
+        message: 'The first split must be smaller than the transaction total.',
+      })
+      return
+    }
     const secondCategory =
       window.prompt('Second split category', transaction.category) ??
       transaction.category
-    const token = await csrfToken()
-    const response = await fetch(`/api/transactions/${transaction.id}/splits`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        csrfToken: token,
-        splits: [
-          {
-            amountMinor: signedFirst.toString(),
-            economicType,
-            category: firstCategory.trim(),
-          },
-          {
-            amountMinor: remainder.toString(),
-            economicType,
-            category: secondCategory.trim(),
-          },
-        ],
-      }),
-    })
-    if (response.ok) window.location.reload()
+    if (secondCategory.trim() === '') {
+      setSplitFeedback({
+        kind: 'error',
+        message: 'The second split category is required.',
+      })
+      return
+    }
+
+    try {
+      setWorking(true)
+      const token = await csrfToken()
+      const response = await fetch(
+        `/api/transactions/${transaction.id}/splits`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            csrfToken: token,
+            splits: [
+              {
+                amountMinor: signedFirst.toString(),
+                economicType,
+                category: firstCategory.trim(),
+              },
+              {
+                amountMinor: remainder.toString(),
+                economicType,
+                category: secondCategory.trim(),
+              },
+            ],
+          }),
+        },
+      )
+      const result = (await response.json()) as { message?: string }
+      if (!response.ok) {
+        throw new Error(result.message ?? 'The split could not be saved.')
+      }
+      setSplitFeedback({
+        kind: 'success',
+        message: 'Split saved successfully. Refreshing…',
+      })
+      window.setTimeout(() => window.location.reload(), 900)
+    } catch (error) {
+      setWorking(false)
+      setSplitFeedback({
+        kind: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'The split could not be saved.',
+      })
+    }
   }
 
   async function removeSplits() {
-    const token = await csrfToken()
-    const response = await fetch(`/api/transactions/${transaction.id}/splits`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ csrfToken: token }),
-    })
-    if (response.ok) window.location.reload()
+    setSplitFeedback(null)
+    try {
+      setWorking(true)
+      const token = await csrfToken()
+      const response = await fetch(
+        `/api/transactions/${transaction.id}/splits`,
+        {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ csrfToken: token }),
+        },
+      )
+      const result = (await response.json()) as { message?: string }
+      if (!response.ok) {
+        throw new Error(result.message ?? 'The splits could not be removed.')
+      }
+      setSplitFeedback({
+        kind: 'success',
+        message: 'Splits removed successfully. Refreshing…',
+      })
+      window.setTimeout(() => window.location.reload(), 900)
+    } catch (error) {
+      setWorking(false)
+      setSplitFeedback({
+        kind: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'The splits could not be removed.',
+      })
+    }
   }
 
   return (
@@ -185,6 +268,14 @@ function TransactionEditor({
           </button>
         ) : null}
       </div>
+      {splitFeedback === null ? null : (
+        <p
+          className={`splitFeedback ${splitFeedback.kind}`}
+          role={splitFeedback.kind === 'error' ? 'alert' : 'status'}
+        >
+          {splitFeedback.message}
+        </p>
+      )}
     </article>
   )
 }

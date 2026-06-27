@@ -346,30 +346,35 @@ Completion gate:
 **Outcome:** the authenticated skeleton, database, and Plaid Sandbox flow run in
 `finance-dev`.
 
-Follow the GCP guide. At this point:
+Status: complete for the development environment.
 
-1. Write Terraform modules for APIs, service accounts, Artifact Registry,
-   Secret Manager, KMS, Cloud SQL, Cloud Run, and Cloud Tasks.
-2. Initially deploy using the Cloud Run service URL. Do not add a global load
+Completed foundation:
+
+1. Terraform modules define APIs, service accounts, Artifact Registry, Secret
+   Manager, KMS, Cloud SQL, Cloud Run, Cloud Tasks, remote state, and deployment
+   identities.
+2. The app deploys using the Cloud Run service URL. Do not add a global load
    balancer or Cloud Armor yet.
-3. Create the Cloud SQL instance only now; it is the primary fixed development
-   cost.
-4. Deploy the web and worker separately.
-5. Deploy migrations as a Cloud Run Job.
-6. Store Plaid credentials in Secret Manager.
-7. Replace the local cipher with Cloud KMS envelope encryption.
-8. Add a Cloud Tasks queue and invoke the private worker with OIDC.
-9. Set low maximum-instance limits.
+3. Cloud SQL is private-IP only and uses the low-cost dev configuration.
+4. Web and worker deploy separately.
+5. Migrations run as a Cloud Run Job.
+6. Plaid and database credentials are stored in Secret Manager.
+7. Plaid token encryption has a Cloud-ready KMS path.
+8. Cloud Tasks invokes the private worker with OIDC.
+9. Manual deploys use immutable image digests, smoke tests, GitHub environment
+   approval, and automatic `DEV_*_IMAGE` variable recording.
+10. Remote Terraform state and PR Terraform plans are active.
 
 Completion gate:
 
-- Terraform can reproduce development infrastructure;
-- web service reaches Cloud SQL;
-- worker cannot be invoked anonymously;
-- a Cloud Task invokes the worker successfully;
-- KMS encrypt/decrypt works only for intended service accounts;
-- Plaid Sandbox Link and sync work through the deployed URL;
-- budget alerts and basic error alerts exist.
+- Terraform can reproduce development infrastructure. Done.
+- Web service reaches Cloud SQL. Done.
+- Worker cannot be invoked anonymously. Done.
+- A Cloud Task invokes the worker successfully. Done.
+- KMS encrypt/decrypt works only for intended service accounts. Done.
+- Plaid Sandbox Link and sync work through the deployed URL. Done.
+- Budget alerts and basic error alerts exist. Baseline budget/logging exists;
+  richer application alerts continue in later operations work.
 
 Learn now:
 
@@ -379,27 +384,51 @@ Learn now:
 - Secret Manager versus environment variables;
 - at-least-once task delivery.
 
-### Milestone 9: Plaid webhooks and reconciliation
+### Milestone 9: asynchronous Plaid sync, webhooks, and reconciliation
 
-**Outcome:** provider updates trigger asynchronous synchronization.
+**Outcome:** Plaid synchronization becomes an asynchronous, retry-safe workflow.
+Manual sync, initial sync, Plaid webhooks, and scheduled reconciliation all
+enqueue work instead of doing provider synchronization inside web requests.
 
 Implementation work:
 
-1. Add the deployed HTTPS webhook URL to Link token creation.
-2. Verify Plaid webhook signatures using the current official mechanism.
-3. Persist an event fingerprint and minimal metadata.
-4. Return quickly after enqueueing a sync task.
-5. Test duplicate and replayed webhook handling.
-6. Use Plaid Sandbox tools to trigger transaction update webhooks.
-7. Add a daily Cloud Scheduler reconciliation task.
-8. Alert when an Item has not synchronized within the expected period.
+1. Define the Plaid sync task payload contract.
+2. Move the existing Plaid `/transactions/sync` runner from web-only execution
+   into the worker.
+3. Change initial sync and **Sync now** to enqueue a Cloud Task and return a
+   task/status response quickly.
+4. Add task status reads for queued, running, completed, failed, and
+   reconnect-required states.
+5. Update the dashboard to show sync status and clear retry/reconnect messages.
+6. Make task processing idempotent across Cloud Tasks retries and duplicate
+   enqueue attempts.
+7. Add the deployed HTTPS webhook URL to Link token creation.
+8. Verify Plaid webhook signatures using the current official mechanism.
+9. Persist webhook event fingerprints and minimal metadata.
+10. Return quickly from webhooks after enqueueing sync work.
+11. Test duplicate and replayed webhook handling.
+12. Use Plaid Sandbox tools to trigger transaction update webhooks.
+13. Add a daily Cloud Scheduler reconciliation task.
+14. Alert when an Item has not synchronized within the expected period.
 
 Completion gate:
 
+- manual **Sync now** enqueues a task and does not run Plaid sync inline;
+- initial post-Link sync enqueues a task;
+- worker task execution updates transactions, classifications, and sync status;
+- duplicate Cloud Task delivery has no duplicate financial effect;
 - a Sandbox webhook causes a sync;
-- duplicate delivery has no duplicate financial effect;
+- duplicate webhook delivery has no duplicate financial effect;
 - invalid signature requests are rejected;
 - missed-webhook simulation is repaired by scheduled reconciliation.
+
+First work driver:
+
+1. Implement `plaid.transactions.sync` Cloud Task payload and worker handler.
+2. Add a web enqueue service and status endpoint.
+3. Convert **Sync now** to enqueue and display task status.
+4. Keep the old inline runner callable only from the worker path after the
+   migration is complete.
 
 ### Milestone 10: debts, investments, dashboard, and budget
 
@@ -559,4 +588,3 @@ Do not proceed automatically past these boundaries:
 5. before changing owner UID or authentication policy;
 6. before enabling a more expensive Gemini model;
 7. before deleting production financial records.
-

@@ -15,6 +15,7 @@ import {
   hasValidCsrfToken,
 } from '../../../../../lib/request-security'
 import {
+  plaidErrorCode,
   SyncAlreadyRunningError,
   synchronizePlaidConnection,
 } from '../../../../../lib/transaction-sync'
@@ -74,12 +75,16 @@ export async function POST(
       )
     }
 
+    const code = plaidErrorCode(error)
     logger.error(
-      { errorName: error instanceof Error ? error.name : 'UnknownError' },
+      {
+        errorCode: code,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      },
       'Plaid transaction synchronization failed',
     )
     return NextResponse.json(
-      { error: 'transaction-sync-failed' },
+      { error: 'transaction-sync-failed', code },
       { status: 502 },
     )
   }

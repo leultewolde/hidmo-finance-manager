@@ -44,6 +44,25 @@ function formatMoney(amountMinor: string, currency: string) {
   }).format(Number(amountMinor) / 100)
 }
 
+function syncErrorMessage(code: string | undefined) {
+  switch (code) {
+    case 'PRODUCT_NOT_READY':
+      return 'Plaid is still preparing transactions. Wait about a minute, then try Sync now again.'
+    case 'ITEM_LOGIN_REQUIRED':
+      return 'Plaid requires this institution to be reconnected.'
+    case 'INVALID_ACCESS_TOKEN':
+      return 'This Plaid connection is no longer valid. Disconnect it and connect it again.'
+    case 'RATE_LIMIT_EXCEEDED':
+      return 'Plaid is receiving too many requests. Wait a minute, then try again.'
+    case 'INTERNAL_SERVER_ERROR':
+      return 'Plaid encountered a temporary error. Wait a minute, then try again.'
+    default:
+      return code === undefined
+        ? 'Transactions could not be synchronized.'
+        : `Transactions could not be synchronized. Plaid error: ${code}.`
+  }
+}
+
 export function PlaidConnectionManager({
   initialConnections,
 }: {
@@ -154,10 +173,14 @@ export function PlaidConnectionManager({
         body: JSON.stringify({ csrfToken }),
       })
       if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as {
+          code?: string
+          error?: string
+        }
         throw new Error(
           response.status === 409
             ? 'A synchronization is already running.'
-            : 'Transactions could not be synchronized.',
+            : syncErrorMessage(body.code),
         )
       }
       window.location.reload()
@@ -216,7 +239,9 @@ export function PlaidConnectionManager({
                     <p className="attentionText">Reconnect required</p>
                   )}
                   {connection.errorCode === null ? null : (
-                    <p>Last sync needs attention</p>
+                    <p className="attentionText">
+                      {syncErrorMessage(connection.errorCode)}
+                    </p>
                   )}
                 </div>
                 <div className="connectionActions">

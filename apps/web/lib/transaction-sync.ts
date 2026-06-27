@@ -66,7 +66,7 @@ interface SyncRepositories {
   }
 }
 
-function plaidErrorCode(error: unknown): string {
+export function plaidErrorCode(error: unknown): string {
   if (
     typeof error === 'object' &&
     error !== null &&

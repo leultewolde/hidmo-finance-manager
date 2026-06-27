@@ -1,0 +1,21 @@
+project_id        = "finance-manager-dev-500423"
+billing_account_id = "0149A2-6F2160-329E77"
+region            = "us-east1"
+
+# Keep this false for the first apply. That bootstrap apply creates the APIs,
+# service accounts, and Artifact Registry repository needed to publish images.
+enable_runtime_infrastructure = false
+enable_cloud_run              = false
+
+# You already created the development budget manually in the GCP console.
+create_budget = false
+
+# Replace this with the Firebase UID for the allowed owner account.
+owner_firebase_uid = "replace-me"
+
+# These placeholders are ignored while enable_cloud_run is false.
+# After pushing the images, replace them with immutable @sha256 digests and set
+# enable_runtime_infrastructure to true.
+web_image       = "us-east1-docker.pkg.dev/finance-manager-dev-500423/finance-images/web@sha256:replace-me"
+worker_image    = "us-east1-docker.pkg.dev/finance-manager-dev-500423/finance-images/worker@sha256:replace-me"
+migration_image = "us-east1-docker.pkg.dev/finance-manager-dev-500423/finance-images/migrations@sha256:replace-me"

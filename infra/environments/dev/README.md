@@ -107,17 +107,58 @@ output:
 terraform output -raw artifact_registry_repository_url
 ```
 
-Images are first tagged with the Git commit for human traceability. After each
-push, obtain its immutable digest. For example:
+On Apple Silicon Macs, build Cloud Run images for `linux/amd64`. Cloud Run
+rejects arm64-only images with an error similar to:
+
+```text
+Container manifest type 'application/vnd.oci.image.index.v1+json' must support amd64/linux.
+```
+
+Use the repository helper from the repo root:
 
 ```bash
-gcloud artifacts docker images describe \
-  us-east1-docker.pkg.dev/finance-manager-dev-500423/finance-images/web:GIT_COMMIT \
+cd /Users/leul/projects/hidmo/finance-manager
+pnpm deploy:images:dev
+```
+
+For a web-only update after an application fix:
+
+```bash
+pnpm deploy:images:dev:web
+```
+
+The script builds `linux/amd64` images, pushes them to Artifact Registry, and
+prints Terraform-ready immutable digest references:
+
+```text
+web_image = "us-east1-docker.pkg.dev/finance-manager-dev-500423/finance-images/web@sha256:..."
+worker_image = "us-east1-docker.pkg.dev/finance-manager-dev-500423/finance-images/worker@sha256:..."
+migration_image = "us-east1-docker.pkg.dev/finance-manager-dev-500423/finance-images/migrations@sha256:..."
+```
+
+Manual equivalent:
+
+```bash
+REPO="us-east1-docker.pkg.dev/finance-manager-dev-500423/finance-images"
+GIT_COMMIT="$(git rev-parse --short HEAD)"
+IMAGE_TAG="${GIT_COMMIT}-amd64"
+
+pnpm exec dotenv -e .env -- docker buildx build \
+  --platform linux/amd64 \
+  --provenance=false \
+  --target web \
+  --build-arg NEXT_PUBLIC_FIREBASE_API_KEY \
+  --build-arg NEXT_PUBLIC_FIREBASE_APP_ID \
+  --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN \
+  --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID \
+  -t "$REPO/web:$IMAGE_TAG" \
+  --push .
+
+gcloud artifacts docker images describe "$REPO/web:$IMAGE_TAG" \
   --format='value(image_summary.digest)'
 ```
 
-Repeat for `worker` and `migrations`. Combine each repository path with its
-digest:
+Combine each repository path with its digest:
 
 ```text
 us-east1-docker.pkg.dev/finance-manager-dev-500423/finance-images/web@sha256:...
@@ -159,6 +200,25 @@ After applying the reviewed foundation plan, add the required Secret Manager
 versions using the separate secret-entry guide. Cloud Run remains disabled, so
 empty secrets cannot break service creation.
 
+Cloud SQL notes learned during the first deployment:
+
+- keep the development instance on `edition = "ENTERPRISE"` when using
+  `db-f1-micro`;
+- `ENTERPRISE_PLUS` rejects `db-f1-micro`;
+- the instance is private-IP only, so use the private IP in the deployed
+  `DATABASE_URL`;
+- create the database user and Secret Manager secret versions outside
+  Terraform so password values do not enter Terraform state.
+
+Minimum secret versions required before Cloud Run:
+
+```text
+database-url
+local-token-encryption-key
+plaid-client-id
+plaid-secret
+```
+
 ## Stage E: deploy Cloud Run
 
 After all required secret versions and immutable image digests exist, set:
@@ -188,6 +248,73 @@ stage. Confirm:
 - no secret values appear in the plan.
 
 Apply only the reviewed saved plan.
+
+Cloud Run notes learned during the first deployment:
+
+- direct VPC access expects resource names such as
+  `projects/finance-manager-dev-500423/global/networks/finance-dev-vpc`, not
+  Compute API self-link URLs;
+- the web service is public at the Cloud Run URL, but app access is still
+  restricted to `FIREBASE_OWNER_UID`;
+- the worker service has no anonymous invoker and should return `HTTP/2 403`
+  to direct browser/curl requests;
+- Firebase Authentication must list the deployed web hostname under
+  Authorized domains;
+- the web runtime service account needs the custom
+  `financeFirebaseAuthSession` role to verify Firebase users and create session
+  cookies.
+
+After Cloud Run deploys:
+
+```bash
+gcloud run jobs execute finance-migrations \
+  --region us-east1 \
+  --project finance-manager-dev-500423 \
+  --wait
+
+curl -i https://finance-web-wn5w6w4mva-ue.a.run.app/api/health/ready
+curl -i https://finance-worker-wn5w6w4mva-ue.a.run.app/api/health/live
+```
+
+Expected:
+
+```text
+web readiness: HTTP/2 200
+worker direct access: HTTP/2 403
+```
+
+For web-only app fixes:
+
+1. merge the app fix to `main`;
+2. run `pnpm deploy:images:dev:web`;
+3. copy the printed `web_image = "...@sha256:..."` line into
+   `terraform.tfvars`;
+4. run `terraform plan -out=web-update.tfplan`;
+5. review that only `finance-web` changes;
+6. apply the saved plan.
+
+## Stage F: deployed functional verification
+
+Use the deployed web URL:
+
+```text
+https://finance-web-wn5w6w4mva-ue.a.run.app
+```
+
+Verify:
+
+1. Google sign-in works for the configured owner account.
+2. The dashboard loads.
+3. Plaid Sandbox Link opens.
+4. A Sandbox institution connects.
+5. Accounts appear.
+6. Transactions sync.
+7. A classification or split persists after refresh.
+8. Direct worker access remains forbidden.
+
+If sign-in returns `invalid-origin`, inspect Cloud Run forwarding/origin
+headers. If sign-in returns `invalid-session`, inspect Firebase Auth IAM on
+`web-runtime`.
 
 ## Important notes
 

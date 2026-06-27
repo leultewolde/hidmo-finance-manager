@@ -28,6 +28,12 @@ resource "google_cloud_run_v2_service" "web" {
   ingress             = "INGRESS_TRAFFIC_ALL"
   deletion_protection = false
 
+  lifecycle {
+    ignore_changes = [
+      scaling,
+    ]
+  }
+
   template {
     service_account = var.web_service_account_email
 
@@ -98,6 +104,12 @@ resource "google_cloud_run_v2_service" "worker" {
   location            = var.location
   ingress             = "INGRESS_TRAFFIC_ALL"
   deletion_protection = false
+
+  lifecycle {
+    ignore_changes = [
+      scaling,
+    ]
+  }
 
   template {
     service_account = var.worker_service_account_email

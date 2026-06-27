@@ -48,6 +48,18 @@ locals {
         "roles/viewer",
       ]
     }
+    terraform-deploy-ci = {
+      display_name = "Finance Manager Terraform deploy CI"
+      description  = "Runs approval-gated Cloud Run deployments from Terraform."
+      project_roles = [
+        "roles/cloudkms.viewer",
+        "roles/iam.securityReviewer",
+        "roles/run.admin",
+        "roles/secretmanager.viewer",
+        "roles/serviceusage.serviceUsageViewer",
+        "roles/viewer",
+      ]
+    }
   }
 
   secret_accessors = {
@@ -244,7 +256,8 @@ module "github_actions_identity" {
   github_ref           = var.github_actions_ref
   service_account_name = module.service_accounts.names["deploy-ci"]
   additional_service_account_names = {
-    terraform-plan-ci = module.service_accounts.names["terraform-plan-ci"]
+    terraform-plan-ci   = module.service_accounts.names["terraform-plan-ci"]
+    terraform-deploy-ci = module.service_accounts.names["terraform-deploy-ci"]
   }
 
   depends_on = [
@@ -256,11 +269,34 @@ module "github_actions_identity" {
 module "terraform_state" {
   source = "../../modules/terraform-state"
 
-  project_id            = var.project_id
-  bucket_name           = var.terraform_state_bucket_name
-  location              = var.terraform_state_bucket_location
-  object_admin_members  = ["serviceAccount:${module.service_accounts.emails["terraform-plan-ci"]}"]
-  bucket_reader_members = ["serviceAccount:${module.service_accounts.emails["terraform-plan-ci"]}"]
+  project_id  = var.project_id
+  bucket_name = var.terraform_state_bucket_name
+  location    = var.terraform_state_bucket_location
+  object_admin_members = [
+    "serviceAccount:${module.service_accounts.emails["terraform-plan-ci"]}",
+    "serviceAccount:${module.service_accounts.emails["terraform-deploy-ci"]}",
+  ]
+  bucket_reader_members = [
+    "serviceAccount:${module.service_accounts.emails["terraform-plan-ci"]}",
+    "serviceAccount:${module.service_accounts.emails["terraform-deploy-ci"]}",
+  ]
+
+  depends_on = [
+    module.project_services,
+    module.service_accounts,
+  ]
+}
+
+resource "google_service_account_iam_member" "terraform_deploy_runtime_act_as" {
+  for_each = toset([
+    "web-runtime",
+    "worker-runtime",
+    "migration-runtime",
+  ])
+
+  service_account_id = module.service_accounts.names[each.value]
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${module.service_accounts.emails["terraform-deploy-ci"]}"
 
   depends_on = [
     module.project_services,

@@ -1,0 +1,440 @@
+name: Manual Deploy Dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      web_image:
+        description: 'Immutable web image. Leave blank to use DEV_WEB_IMAGE.'
+        required: false
+        type: string
+      worker_image:
+        description: 'Immutable worker image. Leave blank to use DEV_WORKER_IMAGE.'
+        required: false
+        type: string
+      migration_image:
+        description: 'Immutable migrations image. Leave blank to use DEV_MIGRATION_IMAGE.'
+        required: false
+        type: string
+      run_migrations:
+        description: 'Run the Cloud Run migration job after apply.'
+        required: true
+        default: false
+        type: boolean
+      confirm_apply:
+        description: 'Required safety switch. Set true to permit apply after dev environment approval.'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manual-deploy-dev
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: finance-manager-dev-500423
+  REGION: us-east1
+  TERRAFORM_VERSION: 1.12.2
+  TERRAFORM_WORKING_DIRECTORY: infra/environments/dev
+  TF_IN_AUTOMATION: 'true'
+  TF_INPUT: 'false'
+  TF_VAR_project_id: finance-manager-dev-500423
+  TF_VAR_region: us-east1
+  TF_VAR_create_budget: 'false'
+  TF_VAR_enable_runtime_infrastructure: 'true'
+  TF_VAR_enable_cloud_run: 'true'
+  TF_VAR_billing_account_id: ${{ vars.GCP_BILLING_ACCOUNT_ID }}
+  TF_VAR_owner_firebase_uid: ${{ vars.FIREBASE_OWNER_UID }}
+
+jobs:
+  disabled:
+    name: Manual deploy disabled
+    if: vars.TERRAFORM_DEPLOY_ENABLED != 'true' || vars.TERRAFORM_DEPLOY_APPROVAL_CONFIGURED != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain skipped deploy
+        run: |
+          {
+            echo "## Manual deploy skipped"
+            echo
+            echo "Set repository variable \`TERRAFORM_DEPLOY_ENABLED=true\` only after the deploy service account is applied."
+            echo "Set repository variable \`TERRAFORM_DEPLOY_APPROVAL_CONFIGURED=true\` only after the GitHub \`dev\` environment requires approval."
+            echo
+            echo "This workflow is intentionally manual and approval-gated."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  wrong-ref:
+    name: Manual deploy wrong ref
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain wrong ref
+        run: |
+          {
+            echo "## Manual deploy skipped"
+            echo
+            echo "Run this workflow from the \`main\` branch. The GCP Workload Identity provider only trusts main for manual deployments."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  unconfirmed:
+    name: Manual deploy not confirmed
+    if: vars.TERRAFORM_DEPLOY_ENABLED == 'true' && vars.TERRAFORM_DEPLOY_APPROVAL_CONFIGURED == 'true' && github.ref == 'refs/heads/main' && inputs.confirm_apply != true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain missing confirmation
+        run: |
+          {
+            echo "## Manual deploy skipped"
+            echo
+            echo "Set workflow input \`confirm_apply=true\` to permit an approval-gated Terraform apply."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  plan:
+    name: Plan deployment
+    if: vars.TERRAFORM_DEPLOY_ENABLED == 'true' && vars.TERRAFORM_DEPLOY_APPROVAL_CONFIGURED == 'true' && github.ref == 'refs/heads/main' && inputs.confirm_apply == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+      id-token: write
+
+    outputs:
+      web_image: ${{ steps.images.outputs.web_image }}
+      worker_image: ${{ steps.images.outputs.worker_image }}
+      migration_image: ${{ steps.images.outputs.migration_image }}
+      plan_exit_code: ${{ steps.plan.outputs.exit_code }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate required repository variables
+        env:
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_TERRAFORM_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_TERRAFORM_DEPLOY_SERVICE_ACCOUNT }}
+          TERRAFORM_STATE_BUCKET: ${{ vars.TERRAFORM_STATE_BUCKET }}
+          TERRAFORM_STATE_PREFIX: ${{ vars.TERRAFORM_STATE_PREFIX }}
+          GCP_BILLING_ACCOUNT_ID: ${{ vars.GCP_BILLING_ACCOUNT_ID }}
+          FIREBASE_OWNER_UID: ${{ vars.FIREBASE_OWNER_UID }}
+          DEV_WEB_IMAGE: ${{ vars.DEV_WEB_IMAGE }}
+          DEV_WORKER_IMAGE: ${{ vars.DEV_WORKER_IMAGE }}
+          DEV_MIGRATION_IMAGE: ${{ vars.DEV_MIGRATION_IMAGE }}
+        run: |
+          missing=0
+          for name in \
+            GCP_WORKLOAD_IDENTITY_PROVIDER \
+            GCP_TERRAFORM_DEPLOY_SERVICE_ACCOUNT \
+            TERRAFORM_STATE_BUCKET \
+            TERRAFORM_STATE_PREFIX \
+            GCP_BILLING_ACCOUNT_ID \
+            FIREBASE_OWNER_UID \
+            DEV_WEB_IMAGE \
+            DEV_WORKER_IMAGE \
+            DEV_MIGRATION_IMAGE
+          do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing repository variable: ${name}"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Resolve image inputs
+        id: images
+        env:
+          INPUT_WEB_IMAGE: ${{ inputs.web_image }}
+          INPUT_WORKER_IMAGE: ${{ inputs.worker_image }}
+          INPUT_MIGRATION_IMAGE: ${{ inputs.migration_image }}
+          DEFAULT_WEB_IMAGE: ${{ vars.DEV_WEB_IMAGE }}
+          DEFAULT_WORKER_IMAGE: ${{ vars.DEV_WORKER_IMAGE }}
+          DEFAULT_MIGRATION_IMAGE: ${{ vars.DEV_MIGRATION_IMAGE }}
+        run: |
+          web_image="${INPUT_WEB_IMAGE:-$DEFAULT_WEB_IMAGE}"
+          worker_image="${INPUT_WORKER_IMAGE:-$DEFAULT_WORKER_IMAGE}"
+          migration_image="${INPUT_MIGRATION_IMAGE:-$DEFAULT_MIGRATION_IMAGE}"
+
+          if ! [[ "$web_image" =~ ^us-east1-docker\.pkg\.dev/finance-manager-dev-500423/finance-images/web@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::web_image must be an immutable web image digest."
+            exit 1
+          fi
+
+          if ! [[ "$worker_image" =~ ^us-east1-docker\.pkg\.dev/finance-manager-dev-500423/finance-images/worker@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::worker_image must be an immutable worker image digest."
+            exit 1
+          fi
+
+          if ! [[ "$migration_image" =~ ^us-east1-docker\.pkg\.dev/finance-manager-dev-500423/finance-images/migrations@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::migration_image must be an immutable migrations image digest."
+            exit 1
+          fi
+
+          {
+            echo "TF_VAR_web_image=${web_image}"
+            echo "TF_VAR_worker_image=${worker_image}"
+            echo "TF_VAR_migration_image=${migration_image}"
+          } >> "$GITHUB_ENV"
+
+          {
+            echo "web_image=${web_image}"
+            echo "worker_image=${worker_image}"
+            echo "migration_image=${migration_image}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_TERRAFORM_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Write generated backend config
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        env:
+          TERRAFORM_STATE_BUCKET: ${{ vars.TERRAFORM_STATE_BUCKET }}
+          TERRAFORM_STATE_PREFIX: ${{ vars.TERRAFORM_STATE_PREFIX }}
+        run: |
+          cat > backend.generated.tf <<EOF
+          terraform {
+            backend "gcs" {
+              bucket = "${TERRAFORM_STATE_BUCKET}"
+              prefix = "${TERRAFORM_STATE_PREFIX}"
+            }
+          }
+          EOF
+
+      - name: Initialize Terraform
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        run: terraform init -input=false
+
+      - name: Validate Terraform
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        run: terraform validate
+
+      - name: Run Terraform deployment plan
+        id: plan
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        run: |
+          set +e
+          terraform plan -input=false -no-color -detailed-exitcode -out=tfplan 2>&1 | tee terraform-plan.log
+          exit_code="${PIPESTATUS[0]}"
+          set -e
+
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+
+          if [ "$exit_code" -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: Guard deployment scope
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        run: |
+          terraform show -json tfplan > tfplan.json
+
+          if jq -e '.resource_changes[]? | select(.change.actions | index("delete"))' tfplan.json >/dev/null; then
+            echo "::error::Deployment plan includes a delete action. Manual deploy only permits non-destructive Cloud Run image updates."
+            jq -r '.resource_changes[]? | select(.change.actions | index("delete")) | .address' tfplan.json
+            exit 1
+          fi
+
+          jq -r '
+            .resource_changes[]?
+            | select((.change.actions | join(",")) != "no-op")
+            | .address
+          ' tfplan.json > changed-addresses.txt
+
+          cat > allowed-addresses.txt <<'EOF'
+          module.cloud_run[0].google_cloud_run_v2_service.web
+          module.cloud_run[0].google_cloud_run_v2_service.worker
+          module.cloud_run[0].google_cloud_run_v2_job.migrations
+          EOF
+
+          invalid=0
+          while IFS= read -r address; do
+            [ -z "$address" ] && continue
+            if ! grep -Fxq "$address" allowed-addresses.txt; then
+              echo "::error::Manual deploy cannot apply change to ${address}."
+              invalid=1
+            fi
+          done < changed-addresses.txt
+
+          if [ "$invalid" -ne 0 ]; then
+            echo "Manual deploy is restricted to Cloud Run web, worker, and migrations image updates."
+            exit 1
+          fi
+
+      - name: Summarize deployment plan
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        env:
+          PLAN_EXIT_CODE: ${{ steps.plan.outputs.exit_code }}
+          WEB_IMAGE: ${{ steps.images.outputs.web_image }}
+          WORKER_IMAGE: ${{ steps.images.outputs.worker_image }}
+          MIGRATION_IMAGE: ${{ steps.images.outputs.migration_image }}
+        run: |
+          {
+            echo "## Manual deploy plan"
+            echo
+            if [ "$PLAN_EXIT_CODE" = "0" ]; then
+              echo "Terraform found no deployment changes."
+            elif [ "$PLAN_EXIT_CODE" = "2" ]; then
+              echo "Terraform found deployment changes within the allowed Cloud Run scope."
+            fi
+            echo
+            echo "\`\`\`hcl"
+            echo "web_image = \"${WEB_IMAGE}\""
+            echo "worker_image = \"${WORKER_IMAGE}\""
+            echo "migration_image = \"${MIGRATION_IMAGE}\""
+            echo "\`\`\`"
+            echo
+            echo "The apply job requires the GitHub \`dev\` environment approval."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    name: Apply deployment
+    needs: plan
+    if: vars.TERRAFORM_DEPLOY_ENABLED == 'true' && vars.TERRAFORM_DEPLOY_APPROVAL_CONFIGURED == 'true' && inputs.confirm_apply == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: dev
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use planned image values
+        env:
+          WEB_IMAGE: ${{ needs.plan.outputs.web_image }}
+          WORKER_IMAGE: ${{ needs.plan.outputs.worker_image }}
+          MIGRATION_IMAGE: ${{ needs.plan.outputs.migration_image }}
+        run: |
+          {
+            echo "TF_VAR_web_image=${WEB_IMAGE}"
+            echo "TF_VAR_worker_image=${WORKER_IMAGE}"
+            echo "TF_VAR_migration_image=${MIGRATION_IMAGE}"
+          } >> "$GITHUB_ENV"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_TERRAFORM_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          version: '>= 363.0.0'
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Write generated backend config
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        env:
+          TERRAFORM_STATE_BUCKET: ${{ vars.TERRAFORM_STATE_BUCKET }}
+          TERRAFORM_STATE_PREFIX: ${{ vars.TERRAFORM_STATE_PREFIX }}
+        run: |
+          cat > backend.generated.tf <<EOF
+          terraform {
+            backend "gcs" {
+              bucket = "${TERRAFORM_STATE_BUCKET}"
+              prefix = "${TERRAFORM_STATE_PREFIX}"
+            }
+          }
+          EOF
+
+      - name: Initialize Terraform
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        run: terraform init -input=false
+
+      - name: Create apply plan
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: Guard apply scope
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        run: |
+          terraform show -json tfplan > tfplan.json
+
+          if jq -e '.resource_changes[]? | select(.change.actions | index("delete"))' tfplan.json >/dev/null; then
+            echo "::error::Apply plan includes a delete action."
+            jq -r '.resource_changes[]? | select(.change.actions | index("delete")) | .address' tfplan.json
+            exit 1
+          fi
+
+          jq -r '
+            .resource_changes[]?
+            | select((.change.actions | join(",")) != "no-op")
+            | .address
+          ' tfplan.json > changed-addresses.txt
+
+          cat > allowed-addresses.txt <<'EOF'
+          module.cloud_run[0].google_cloud_run_v2_service.web
+          module.cloud_run[0].google_cloud_run_v2_service.worker
+          module.cloud_run[0].google_cloud_run_v2_job.migrations
+          EOF
+
+          invalid=0
+          while IFS= read -r address; do
+            [ -z "$address" ] && continue
+            if ! grep -Fxq "$address" allowed-addresses.txt; then
+              echo "::error::Manual deploy cannot apply change to ${address}."
+              invalid=1
+            fi
+          done < changed-addresses.txt
+
+          exit "$invalid"
+
+      - name: Apply Terraform deployment
+        working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Run migrations
+        if: inputs.run_migrations == true
+        run: |
+          gcloud run jobs execute finance-migrations \
+            --region "${REGION}" \
+            --project "${PROJECT_ID}" \
+            --wait
+
+      - name: Smoke test deployed services
+        run: |
+          web_status="$(curl -sS -o /dev/null -w '%{http_code}' https://finance-web-wn5w6w4mva-ue.a.run.app/api/health/ready)"
+          worker_status="$(curl -sS -o /dev/null -w '%{http_code}' https://finance-worker-wn5w6w4mva-ue.a.run.app/api/health/live)"
+
+          if [ "$web_status" != "200" ]; then
+            echo "::error::Expected web readiness HTTP 200, got ${web_status}."
+            exit 1
+          fi
+
+          if [ "$worker_status" != "403" ]; then
+            echo "::error::Expected anonymous worker health HTTP 403, got ${worker_status}."
+            exit 1
+          fi
+
+      - name: Summarize deployment
+        run: |
+          {
+            echo "## Manual deploy complete"
+            echo
+            echo "- Web readiness returned HTTP 200."
+            echo "- Worker anonymous health returned HTTP 403."
+            echo "- Migrations requested: \`${{ inputs.run_migrations }}\`"
+            echo
+            echo "Update repository variables \`DEV_WEB_IMAGE\`, \`DEV_WORKER_IMAGE\`, and \`DEV_MIGRATION_IMAGE\` to match the deployed image values if they changed."
+          } >> "$GITHUB_STEP_SUMMARY"

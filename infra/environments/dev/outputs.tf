@@ -30,6 +30,10 @@ output "terraform_plan_ci_service_account_email" {
   value = module.service_accounts.emails["terraform-plan-ci"]
 }
 
+output "terraform_deploy_ci_service_account_email" {
+  value = module.service_accounts.emails["terraform-deploy-ci"]
+}
+
 output "terraform_state_bucket_name" {
   value = module.terraform_state.bucket_name
 }

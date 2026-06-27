@@ -40,3 +40,26 @@ terraform plan
 ```
 
 Review the plan carefully before any `terraform apply`.
+
+The dev deployment is intentionally staged:
+
+1. bootstrap APIs, service accounts, IAM, and Artifact Registry;
+2. build/push immutable `linux/amd64` images;
+3. create private networking, Cloud SQL, Secret Manager containers, KMS, and
+   Cloud Tasks;
+4. add Secret Manager versions outside Terraform;
+5. deploy Cloud Run;
+6. run migrations and deployed smoke tests.
+
+Use the helper script from the repo root when publishing images:
+
+```bash
+pnpm deploy:images:dev
+pnpm deploy:images:dev:web
+```
+
+The script prints `web_image`, `worker_image`, and `migration_image` values in
+the exact format expected by `infra/environments/dev/terraform.tfvars`.
+
+See `infra/environments/dev/README.md` for the full runbook, recovery notes,
+and post-deployment verification checklist.

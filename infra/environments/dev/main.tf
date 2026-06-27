@@ -154,6 +154,25 @@ locals {
   }
 }
 
+resource "google_project_iam_custom_role" "firebase_auth_session" {
+  project     = var.project_id
+  role_id     = "financeFirebaseAuthSession"
+  title       = "Finance Manager Firebase Auth Session"
+  description = "Allows the web runtime to verify Firebase users and create session cookies."
+  permissions = [
+    "firebaseauth.users.createSession",
+    "firebaseauth.users.get",
+  ]
+
+  depends_on = [module.project_services]
+}
+
+resource "google_project_iam_member" "web_firebase_auth_session" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.firebase_auth_session.name
+  member  = "serviceAccount:${module.service_accounts.emails["web-runtime"]}"
+}
+
 module "project_services" {
   source = "../../modules/project-services"
 

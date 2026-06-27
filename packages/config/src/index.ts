@@ -9,6 +9,10 @@ const commonEnvironmentSchema = z.object({
 })
 
 const webEnvironmentSchema = commonEnvironmentSchema.extend({
+  CLOUD_TASKS_CALCULATION_QUEUE: z.string().min(1).optional(),
+  CLOUD_TASKS_INVOKER_SERVICE_ACCOUNT_EMAIL: z.email().optional(),
+  CLOUD_TASKS_LOCATION: z.string().min(1).optional(),
+  CLOUD_TASKS_WORKER_URL: z.url().optional(),
   FIREBASE_OWNER_UID: z.string().min(1),
   FIREBASE_PROJECT_ID: z.string().min(1),
   LOCAL_TOKEN_ENCRYPTION_KEY: z.string().refine((value) => {
@@ -24,6 +28,7 @@ const webEnvironmentSchema = commonEnvironmentSchema.extend({
 })
 
 const workerEnvironmentSchema = commonEnvironmentSchema.extend({
+  CLOUD_TASKS_ALLOWED_QUEUES: z.string().optional(),
   WORKER_PORT: z.coerce.number().int().positive().max(65_535).default(3001),
 })
 

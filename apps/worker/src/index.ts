@@ -1,13 +1,25 @@
 import { getWorkerEnvironment } from '@hidmo/config'
-import { createDatabasePool } from '@hidmo/database'
+import {
+  createDatabase,
+  createDatabasePool,
+  createRepositories,
+} from '@hidmo/database'
 import { createLogger } from '@hidmo/logging'
 
-import { createWorkerServer } from './server.js'
+import { createWorkerServer, parseAllowedTaskQueues } from './server.js'
 
 const environment = getWorkerEnvironment()
 const logger = createLogger('worker', environment.LOG_LEVEL)
 const pool = createDatabasePool(environment.DATABASE_URL)
-const server = createWorkerServer({ logger, pool })
+const repositories = createRepositories(createDatabase(pool))
+const server = createWorkerServer({
+  allowedTaskQueues: parseAllowedTaskQueues(
+    environment.CLOUD_TASKS_ALLOWED_QUEUES,
+  ),
+  logger,
+  pool,
+  taskExecutions: repositories.taskExecutions,
+})
 
 server.listen(environment.WORKER_PORT, '0.0.0.0', () => {
   logger.info({ port: environment.WORKER_PORT }, 'worker listening')

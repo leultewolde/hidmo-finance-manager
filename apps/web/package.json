@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@google-cloud/tasks": "6.2.3",
     "@hidmo/classification": "workspace:*",
     "@hidmo/config": "workspace:*",
     "@hidmo/contracts": "workspace:*",

@@ -38,4 +38,105 @@ describe('worker health server', () => {
       status: 'ok',
     })
   })
+
+  it('rejects smoke tasks without Cloud Tasks headers', async () => {
+    const response = await getWorkerResponse(
+      'POST',
+      '/tasks/smoke',
+      {
+        logger: createLogger('test', 'silent'),
+        pool: { query: vi.fn() } as never,
+        taskExecutions: {
+          claim: vi.fn(),
+          complete: vi.fn(),
+        },
+      },
+      {
+        bodyText: JSON.stringify({
+          operation: 'cloud-tasks.smoke',
+          schemaVersion: 1,
+          idempotencyKey: 'test',
+        }),
+        headers: {},
+      },
+    )
+
+    expect(response.statusCode).toBe(401)
+    expect(response.body).toEqual({ error: 'missing_cloud_tasks_headers' })
+  })
+
+  it('records a smoke task once', async () => {
+    const taskExecutions = {
+      claim: vi.fn().mockResolvedValue(true),
+      complete: vi.fn().mockResolvedValue(undefined),
+    }
+
+    const response = await getWorkerResponse(
+      'POST',
+      '/tasks/smoke',
+      {
+        allowedTaskQueues: new Set(['calculation']),
+        logger: createLogger('test', 'silent'),
+        pool: { query: vi.fn() } as never,
+        taskExecutions,
+      },
+      {
+        bodyText: JSON.stringify({
+          operation: 'cloud-tasks.smoke',
+          schemaVersion: 1,
+          idempotencyKey: 'deploy-smoke:test',
+        }),
+        headers: {
+          'x-cloudtasks-queuename': 'calculation',
+          'x-cloudtasks-taskname': 'deploy-smoke-test',
+        },
+      },
+    )
+
+    expect(response.statusCode).toBe(200)
+    expect(response.body).toMatchObject({
+      idempotencyKey: 'deploy-smoke:test',
+      operation: 'cloud-tasks.smoke',
+      status: 'completed',
+      taskName: 'deploy-smoke-test',
+    })
+    expect(taskExecutions.claim).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: 'deploy-smoke:test',
+        operation: 'cloud-tasks.smoke',
+        schemaVersion: 1,
+      }),
+    )
+    expect(taskExecutions.complete).toHaveBeenCalledOnce()
+  })
+
+  it('treats repeated smoke task deliveries as successful duplicates', async () => {
+    const response = await getWorkerResponse(
+      'POST',
+      '/tasks/smoke',
+      {
+        allowedTaskQueues: new Set(['calculation']),
+        logger: createLogger('test', 'silent'),
+        pool: { query: vi.fn() } as never,
+        taskExecutions: {
+          claim: vi.fn().mockResolvedValue(false),
+          complete: vi.fn(),
+        },
+      },
+      {
+        bodyText: JSON.stringify({
+          operation: 'cloud-tasks.smoke',
+          schemaVersion: 1,
+          idempotencyKey: 'deploy-smoke:test',
+        }),
+        headers: {
+          'x-cloudtasks-queuename': 'calculation',
+          'x-cloudtasks-taskname': 'deploy-smoke-test',
+        },
+      },
+    )
+
+    expect(response.statusCode).toBe(200)
+    expect(response.body).toMatchObject({ status: 'duplicate' })
+  })
 })

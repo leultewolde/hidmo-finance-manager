@@ -53,6 +53,7 @@ locals {
       description  = "Runs approval-gated Cloud Run deployments from Terraform."
       project_roles = [
         "roles/cloudkms.viewer",
+        "roles/cloudtasks.enqueuer",
         "roles/iam.securityReviewer",
         "roles/run.admin",
         "roles/secretmanager.viewer",
@@ -304,6 +305,22 @@ resource "google_service_account_iam_member" "terraform_deploy_runtime_act_as" {
   ]
 }
 
+resource "google_service_account_iam_member" "task_invoker_token_act_as" {
+  for_each = toset([
+    module.service_accounts.emails["terraform-deploy-ci"],
+    module.service_accounts.emails["web-runtime"],
+  ])
+
+  service_account_id = module.service_accounts.names["tasks-invoker"]
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${each.value}"
+
+  depends_on = [
+    module.project_services,
+    module.service_accounts,
+  ]
+}
+
 module "network" {
   count  = var.enable_runtime_infrastructure ? 1 : 0
   source = "../../modules/network"
@@ -412,7 +429,14 @@ module "cloud_run" {
     FIREBASE_PROJECT_ID = var.project_id
     PLAID_ENV           = "sandbox"
   })
-  worker_environment     = var.worker_environment
+  web_cloud_tasks_environment = {
+    calculation_queue             = "calculation"
+    invoker_service_account_email = module.service_accounts.emails["tasks-invoker"]
+    location                      = var.region
+  }
+  worker_environment = merge(var.worker_environment, {
+    CLOUD_TASKS_ALLOWED_QUEUES = "calculation"
+  })
   migration_environment  = var.migration_environment
   web_secret_env         = local.cloud_run_web_secret_env
   worker_secret_env      = local.cloud_run_worker_secret_env

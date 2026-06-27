@@ -414,18 +414,46 @@ jobs:
 
       - name: Smoke test deployed services
         run: |
-          web_status="$(curl -sS -o /dev/null -w '%{http_code}' https://finance-web-wn5w6w4mva-ue.a.run.app/api/health/ready)"
-          worker_status="$(curl -sS -o /dev/null -w '%{http_code}' https://finance-worker-wn5w6w4mva-ue.a.run.app/api/health/live)"
+          wait_for_status() {
+            local name="$1"
+            local url="$2"
+            local expected_status="$3"
+            local attempts="${4:-18}"
+            local sleep_seconds="${5:-10}"
+            local status
 
-          if [ "$web_status" != "200" ]; then
-            echo "::error::Expected web readiness HTTP 200, got ${web_status}."
-            exit 1
-          fi
+            for attempt in $(seq 1 "$attempts"); do
+              status="$(curl -sS -o "${name}-response.txt" -w '%{http_code}' "$url" || true)"
 
-          if [ "$worker_status" != "403" ]; then
-            echo "::error::Expected anonymous worker health HTTP 403, got ${worker_status}."
-            exit 1
-          fi
+              if [ "$status" = "$expected_status" ]; then
+                echo "${name} returned expected HTTP ${expected_status} on attempt ${attempt}."
+                return 0
+              fi
+
+              echo "${name} returned HTTP ${status}; expected ${expected_status}. Attempt ${attempt}/${attempts}."
+
+              if [ "$attempt" -lt "$attempts" ]; then
+                sleep "$sleep_seconds"
+              fi
+            done
+
+            echo "::error::${name} did not return expected HTTP ${expected_status}."
+            echo "${name} final response body:"
+            cat "${name}-response.txt" || true
+            return 1
+          }
+
+          wait_for_status \
+            web-readiness \
+            https://finance-web-wn5w6w4mva-ue.a.run.app/api/health/ready \
+            200
+
+          wait_for_status \
+            worker-anonymous-health \
+            https://finance-worker-wn5w6w4mva-ue.a.run.app/api/health/live \
+            403 \
+            6 \
+            5
 
       - name: Summarize deployment
         run: |

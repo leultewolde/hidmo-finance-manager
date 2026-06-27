@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.git
+.github
+.idea
+.next
+.playwright-mcp
+coverage
+dist
+docs
+infra
+node_modules
+*.log
+Dockerfile*
+compose.yaml

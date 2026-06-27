@@ -17,6 +17,8 @@
     "db:reset": "dotenv -e .env -- pnpm --filter @hidmo/database db:reset",
     "db:seed": "dotenv -e .env -- pnpm --filter @hidmo/database db:seed",
     "db:up": "docker compose up -d --wait postgres",
+    "container:build": "pnpm container:build:web && docker build --target worker -t hidmo-worker:local . && docker build --target migrations -t hidmo-migrations:local .",
+    "container:build:web": "dotenv -e .env -- docker build --target web --build-arg NEXT_PUBLIC_FIREBASE_API_KEY --build-arg NEXT_PUBLIC_FIREBASE_APP_ID --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID -t hidmo-web:local .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",

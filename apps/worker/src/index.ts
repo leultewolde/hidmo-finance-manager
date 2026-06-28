@@ -6,12 +6,9 @@ import {
 } from '@hidmo/database'
 import { createLogger } from '@hidmo/logging'
 import { createPlaidProvider, parseLocalWrappingKey } from '@hidmo/plaid'
-import {
-  plaidErrorCode,
-  refreshClassifications,
-  synchronizePlaidConnection,
-} from '@hidmo/sync'
+import { refreshClassifications, synchronizePlaidConnection } from '@hidmo/sync'
 
+import { runPlaidSyncJob } from './plaid-sync-handler.js'
 import { createWorkerServer, parseAllowedTaskQueues } from './server.js'
 
 const environment = getWorkerEnvironment()
@@ -32,27 +29,35 @@ const server = createWorkerServer({
   ),
   logger,
   plaidSync: async ({ userId, connectionId, syncJobId }) => {
-    await repositories.syncJobs.markRunning(syncJobId)
-    try {
-      const sync = await synchronizePlaidConnection({
-        userId,
-        connectionId,
-        provider,
-        repositories,
-        wrappingKey,
-      })
-      const classification = await refreshClassifications(userId, repositories)
-      const result = { ...sync, ...classification }
-      await repositories.syncJobs.markSucceeded(syncJobId, result)
-      logger.info(
-        { userId, connectionId, syncJobId, ...result },
-        'Plaid transactions synchronized by worker',
-      )
-      return result
-    } catch (error) {
-      await repositories.syncJobs.markFailed(syncJobId, plaidErrorCode(error))
-      throw error
-    }
+    const result = await runPlaidSyncJob(
+      { userId, connectionId, syncJobId },
+      {
+        markRunning: repositories.syncJobs.markRunning.bind(
+          repositories.syncJobs,
+        ),
+        markSucceeded: repositories.syncJobs.markSucceeded.bind(
+          repositories.syncJobs,
+        ),
+        markFailed: repositories.syncJobs.markFailed.bind(
+          repositories.syncJobs,
+        ),
+        synchronize: ({ userId, connectionId }) =>
+          synchronizePlaidConnection({
+            userId,
+            connectionId,
+            provider,
+            repositories,
+            wrappingKey,
+          }),
+        refreshClassifications: (userId) =>
+          refreshClassifications(userId, repositories),
+      },
+    )
+    logger.info(
+      { userId, connectionId, syncJobId, ...result },
+      'Plaid transactions synchronized by worker',
+    )
+    return result
   },
   pool,
   taskExecutions: repositories.taskExecutions,

@@ -275,6 +275,24 @@ li {
   color: #ff9e8f !important;
 }
 
+.syncJobText {
+  margin-top: 10px;
+  max-width: 52rem;
+}
+
+.syncJobText-queued,
+.syncJobText-running {
+  color: #f2cf76 !important;
+}
+
+.syncJobText-succeeded {
+  color: #a6ce78 !important;
+}
+
+.syncJobText-failed {
+  color: #ff9e8f !important;
+}
+
 .accountList {
   margin: 24px 0 0;
   padding: 0;

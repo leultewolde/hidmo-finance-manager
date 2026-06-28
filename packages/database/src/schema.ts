@@ -91,6 +91,12 @@ export const taskStatusEnum = pgEnum('task_status', [
   'completed',
   'failed',
 ])
+export const syncJobStatusEnum = pgEnum('sync_job_status', [
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+])
 
 export const users = pgTable(
   'users',
@@ -664,7 +670,44 @@ export const taskExecutions = pgTable(
   ],
 )
 
+export const syncJobs = pgTable(
+  'sync_jobs',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => connections.id, { onDelete: 'cascade' }),
+    operation: text('operation').notNull(),
+    trigger: text('trigger').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    cloudTaskName: text('cloud_task_name'),
+    status: syncJobStatusEnum('status').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    lastErrorCode: text('last_error_code'),
+    result: jsonb('result').notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('sync_jobs_idempotency_unique').on(table.idempotencyKey),
+    index('sync_jobs_user_created_idx').on(table.userId, table.createdAt),
+    index('sync_jobs_connection_created_idx').on(
+      table.connectionId,
+      table.createdAt,
+    ),
+    foreignKey({
+      name: 'sync_jobs_connection_owner_fk',
+      columns: [table.userId, table.connectionId],
+      foreignColumns: [connections.userId, connections.id],
+    }).onDelete('cascade'),
+  ],
+)
+
 export type UserRow = typeof users.$inferSelect
 export type AccountRow = typeof accounts.$inferSelect
 export type TransactionRow = typeof transactions.$inferSelect
 export type LiabilityRow = typeof liabilities.$inferSelect
+export type SyncJobRow = typeof syncJobs.$inferSelect

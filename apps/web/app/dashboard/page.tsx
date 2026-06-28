@@ -29,6 +29,19 @@ export default async function DashboardPage() {
     await ownerContext.repositories.connections.listWithAccountsForUser(
       ownerContext.databaseOwner.id,
     )
+  const recentSyncJobs =
+    await ownerContext.repositories.syncJobs.listRecentForUser(
+      ownerContext.databaseOwner.id,
+    )
+  const latestSyncJobByConnection = new Map<
+    string,
+    (typeof recentSyncJobs)[number]
+  >()
+  for (const job of recentSyncJobs) {
+    if (!latestSyncJobByConnection.has(job.connectionId)) {
+      latestSyncJobByConnection.set(job.connectionId, job)
+    }
+  }
   const connections: ConnectionView[] = connectionRows.map((connection) => ({
     id: connection.id,
     institutionName: connection.institutionName,
@@ -38,6 +51,24 @@ export default async function DashboardPage() {
     errorCode: connection.errorCode,
     reconnectRequiredAt: connection.reconnectRequiredAt?.toISOString() ?? null,
     createdAt: connection.createdAt.toISOString(),
+    latestSyncJob: (() => {
+      const job = latestSyncJobByConnection.get(connection.id)
+      if (job === undefined) return null
+      return {
+        id: job.id,
+        status: job.status,
+        trigger: job.trigger,
+        lastErrorCode: job.lastErrorCode,
+        cloudTaskName: job.cloudTaskName,
+        result:
+          typeof job.result === 'object' && job.result !== null
+            ? (job.result as Record<string, unknown>)
+            : {},
+        createdAt: job.createdAt.toISOString(),
+        startedAt: job.startedAt?.toISOString() ?? null,
+        completedAt: job.completedAt?.toISOString() ?? null,
+      }
+    })(),
     accounts: connection.accounts.map((account) => ({
       id: account.id,
       name: account.name,

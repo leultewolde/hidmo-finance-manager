@@ -165,6 +165,7 @@ describe('worker health server', () => {
           schemaVersion: 1,
           userId: '00000000-0000-4000-8000-000000000001',
           connectionId: '00000000-0000-4000-8000-000000000002',
+          syncJobId: '00000000-0000-4000-8000-000000000003',
           idempotencyKey:
             'plaid-sync:00000000-0000-4000-8000-000000000002:test',
         }),
@@ -179,12 +180,14 @@ describe('worker health server', () => {
     expect(response.body).toMatchObject({
       operation: 'plaid.transactions.sync',
       status: 'completed',
+      syncJobId: '00000000-0000-4000-8000-000000000003',
       added: 2,
       classified: 3,
     })
     expect(plaidSync).toHaveBeenCalledWith({
       userId: '00000000-0000-4000-8000-000000000001',
       connectionId: '00000000-0000-4000-8000-000000000002',
+      syncJobId: '00000000-0000-4000-8000-000000000003',
     })
   })
 
@@ -204,6 +207,7 @@ describe('worker health server', () => {
           schemaVersion: 1,
           userId: '00000000-0000-4000-8000-000000000001',
           connectionId: '00000000-0000-4000-8000-000000000002',
+          syncJobId: '00000000-0000-4000-8000-000000000003',
           idempotencyKey:
             'plaid-sync:00000000-0000-4000-8000-000000000002:test',
         }),

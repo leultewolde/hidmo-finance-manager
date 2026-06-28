@@ -69,6 +69,7 @@ describe('database migrations and synthetic seed', () => {
       'metric_snapshots',
       'recommendations',
       'recurring_streams',
+      'sync_jobs',
       'task_executions',
       'transaction_splits',
       'transactions',
@@ -455,6 +456,47 @@ describe('database constraints and transactions', () => {
     await expect(
       repositories.taskExecutions.claim({ ...input, id: randomUUID() }),
     ).resolves.toBe(false)
+  })
+
+  it('tracks Plaid sync job lifecycle for dashboard status', async () => {
+    const jobId = randomUUID()
+    const idempotencyKey = `plaid-sync:${syntheticIds.connection}:${jobId}`
+
+    const created = await repositories.syncJobs.createQueued({
+      id: jobId,
+      userId: syntheticIds.user,
+      connectionId: syntheticIds.connection,
+      operation: 'plaid.transactions.sync',
+      trigger: 'manual',
+      idempotencyKey,
+    })
+    if (created === undefined) throw new Error('Sync job was not created')
+    expect(created.status).toBe('queued')
+
+    await repositories.syncJobs.markEnqueued(jobId, 'plaid-sync/tasks/test')
+    await repositories.syncJobs.markRunning(jobId)
+    await repositories.syncJobs.markSucceeded(jobId, {
+      added: 1,
+      modified: 2,
+      removed: 0,
+      classified: 3,
+    })
+
+    const [latest] = await repositories.syncJobs.listRecentForUser(
+      syntheticIds.user,
+      1,
+    )
+    if (latest === undefined) throw new Error('Sync job was not listed')
+    expect(latest).toMatchObject({
+      id: jobId,
+      connectionId: syntheticIds.connection,
+      cloudTaskName: 'plaid-sync/tasks/test',
+      status: 'succeeded',
+      lastErrorCode: null,
+    })
+    expect(latest.result).toMatchObject({ added: 1, classified: 3 })
+    expect(latest.startedAt).toBeInstanceOf(Date)
+    expect(latest.completedAt).toBeInstanceOf(Date)
   })
 
   it('preserves existing splits when replacement validation fails', async () => {

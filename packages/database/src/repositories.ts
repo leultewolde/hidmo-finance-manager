@@ -1,6 +1,16 @@
 import { randomUUID } from 'node:crypto'
 
-import { and, asc, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  or,
+  sql,
+} from 'drizzle-orm'
 
 import type {
   Account,
@@ -1375,6 +1385,38 @@ export class SyncJobRepository {
       .where(eq(syncJobs.userId, userId))
       .orderBy(desc(syncJobs.createdAt))
       .limit(limit)
+  }
+
+  async findWebhookCoalescingCandidate(input: {
+    userId: string
+    connectionId: string
+    noOpCooldownSince: Date
+  }) {
+    const [candidate] = await this.db
+      .select()
+      .from(syncJobs)
+      .where(
+        and(
+          eq(syncJobs.userId, input.userId),
+          eq(syncJobs.connectionId, input.connectionId),
+          eq(syncJobs.operation, 'plaid.transactions.sync'),
+          or(
+            inArray(syncJobs.status, ['queued', 'running']),
+            and(
+              eq(syncJobs.trigger, 'webhook'),
+              eq(syncJobs.status, 'succeeded'),
+              gte(syncJobs.completedAt, input.noOpCooldownSince),
+              sql`coalesce((${syncJobs.result}->>'added')::integer, 0) = 0`,
+              sql`coalesce((${syncJobs.result}->>'modified')::integer, 0) = 0`,
+              sql`coalesce((${syncJobs.result}->>'removed')::integer, 0) = 0`,
+            ),
+          ),
+        ),
+      )
+      .orderBy(desc(syncJobs.createdAt))
+      .limit(1)
+
+    return candidate
   }
 }
 

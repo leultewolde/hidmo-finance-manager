@@ -8,6 +8,7 @@ const PLAID_TRANSACTION_SYNC_CODES = new Set([
   'HISTORICAL_UPDATE',
   'DEFAULT_UPDATE',
 ])
+export const WEBHOOK_NO_OP_COOLDOWN_MILLISECONDS = 60_000
 
 export type PlaidWebhookResult =
   | {
@@ -49,6 +50,18 @@ export interface PlaidWebhookDependencies {
       trigger: string
       idempotencyKey: string
     }): Promise<unknown | undefined>
+    findWebhookCoalescingCandidate(input: {
+      userId: string
+      connectionId: string
+      noOpCooldownSince: Date
+    }): Promise<
+      | {
+          id: string
+          status: string
+          completedAt: Date | null
+        }
+      | undefined
+    >
     markEnqueued(id: string, cloudTaskName: string): Promise<void>
     markFailed(id: string, errorCode: string): Promise<void>
   }
@@ -59,6 +72,7 @@ export interface PlaidWebhookDependencies {
     idempotencyKey: string
   }): Promise<{ taskName: string }>
   createId?: () => string
+  now?: () => Date
 }
 
 export async function handlePlaidWebhookPayload(
@@ -89,6 +103,31 @@ export async function handlePlaidWebhookPayload(
   )
   if (connection === undefined) {
     return { httpStatus: 202, body: { status: 'unknown_item' } }
+  }
+
+  const now = dependencies.now ?? (() => new Date())
+  const coalescingCandidate =
+    await dependencies.syncJobs.findWebhookCoalescingCandidate({
+      userId: connection.userId,
+      connectionId: connection.id,
+      noOpCooldownSince: new Date(
+        now().getTime() - WEBHOOK_NO_OP_COOLDOWN_MILLISECONDS,
+      ),
+    })
+  if (coalescingCandidate !== undefined) {
+    return {
+      httpStatus: 202,
+      body: {
+        status: 'ignored',
+        reason:
+          coalescingCandidate.status === 'queued' ||
+          coalescingCandidate.status === 'running'
+            ? 'sync_already_active'
+            : 'recent_noop_sync',
+        connectionId: connection.id,
+        syncJobId: coalescingCandidate.id,
+      },
+    }
   }
 
   const createId = dependencies.createId ?? randomUUID

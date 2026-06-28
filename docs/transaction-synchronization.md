@@ -91,6 +91,11 @@ the worker skips classification refresh and records `classified = 0` for that
 job. This keeps repeated no-op webhooks cheap while preserving visible sync
 status.
 
+Webhook enqueue is coalesced per connection. If a sync is already queued or
+running, a new webhook does not enqueue another task. If a webhook sync recently
+completed with no transaction changes, another webhook inside the cooldown
+window is acknowledged and ignored.
+
 ## Plaid webhook setup
 
 The deployed development webhook URL is:

@@ -227,6 +227,13 @@ describe('database constraints and transactions', () => {
       ],
     })
 
+    await expect(
+      repositories.connections.getActiveByPlaidItemId(plaidItemId),
+    ).resolves.toMatchObject({
+      id: connectionId,
+      userId: syntheticIds.user,
+    })
+
     await repositories.connections.revokeForUser(
       syntheticIds.user,
       connectionId,
@@ -246,6 +253,9 @@ describe('database constraints and transactions', () => {
         .from(accounts)
         .where(eq(accounts.connectionId, connectionId)),
     ).toHaveLength(0)
+    await expect(
+      repositories.connections.getActiveByPlaidItemId(plaidItemId),
+    ).resolves.toBeUndefined()
   })
 
   it('applies transaction pages idempotently and advances the cursor atomically', async () => {

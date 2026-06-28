@@ -288,6 +288,25 @@ export class ConnectionRepository {
     return connection
   }
 
+  async getActiveByPlaidItemId(plaidItemId: string) {
+    const [connection] = await this.db
+      .select({
+        id: connections.id,
+        userId: connections.userId,
+      })
+      .from(connections)
+      .where(
+        and(
+          eq(connections.plaidItemId, plaidItemId),
+          eq(connections.status, 'active'),
+          isNotNull(connections.encryptedAccessToken),
+        ),
+      )
+      .limit(1)
+
+    return connection
+  }
+
   async revokeForUser(userId: string, connectionId: string) {
     await this.db.transaction(async (tx) => {
       await tx
@@ -1301,6 +1320,7 @@ export class SyncJobRepository {
         idempotencyKey: input.idempotencyKey,
         status: 'queued',
       })
+      .onConflictDoNothing({ target: syncJobs.idempotencyKey })
       .returning()
     return created
   }

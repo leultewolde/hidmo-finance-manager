@@ -56,3 +56,12 @@ export const plaidSyncTaskResponseSchema = z.object({
 })
 
 export type PlaidSyncTaskResponse = z.infer<typeof plaidSyncTaskResponseSchema>
+
+export const plaidWebhookPayloadSchema = z.object({
+  webhook_type: z.string().min(1),
+  webhook_code: z.string().min(1),
+  item_id: z.string().min(1),
+  webhook_id: z.string().min(1).optional(),
+})
+
+export type PlaidWebhookPayload = z.infer<typeof plaidWebhookPayloadSchema>

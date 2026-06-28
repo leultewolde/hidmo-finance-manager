@@ -153,15 +153,17 @@ export async function enqueueCloudTasksSmokeTask() {
 export async function enqueuePlaidSyncTask(input: {
   userId: string
   connectionId: string
+  syncJobId: string
+  idempotencyKey: string
 }) {
   const config = getCloudTaskConfig()
-  const idempotencyKey = `plaid-sync:${input.connectionId}:${randomUUID()}`
   const payload = plaidSyncTaskPayloadSchema.parse({
     operation: 'plaid.transactions.sync',
     schemaVersion: 1,
     userId: input.userId,
     connectionId: input.connectionId,
-    idempotencyKey,
+    syncJobId: input.syncJobId,
+    idempotencyKey: input.idempotencyKey,
   })
   const task = await createHttpTask({
     config,
@@ -171,7 +173,7 @@ export async function enqueuePlaidSyncTask(input: {
   })
 
   return {
-    idempotencyKey,
+    idempotencyKey: input.idempotencyKey,
     taskName: task.name ?? '',
   }
 }

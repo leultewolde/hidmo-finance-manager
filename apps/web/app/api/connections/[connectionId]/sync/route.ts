@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { randomUUID } from 'node:crypto'
 
 import { createLogger } from '@hidmo/logging'
 
@@ -55,16 +56,39 @@ export async function POST(
         { status: 404 },
       )
     }
-    const task = await enqueuePlaidSyncTask({
+    const syncJobId = randomUUID()
+    const idempotencyKey = `plaid-sync:${connectionId}:${syncJobId}`
+    await repositories.syncJobs.createQueued({
+      id: syncJobId,
       userId: databaseOwner.id,
       connectionId,
+      operation: 'plaid.transactions.sync',
+      trigger: 'manual',
+      idempotencyKey,
     })
 
+    let task: Awaited<ReturnType<typeof enqueuePlaidSyncTask>>
+    try {
+      task = await enqueuePlaidSyncTask({
+        userId: databaseOwner.id,
+        connectionId,
+        syncJobId,
+        idempotencyKey,
+      })
+      await repositories.syncJobs.markEnqueued(syncJobId, task.taskName)
+    } catch (error) {
+      await repositories.syncJobs.markFailed(syncJobId, 'TASK_ENQUEUE_FAILED')
+      throw error
+    }
+
     logger.info(
-      { connectionId, taskName: task.taskName },
+      { connectionId, syncJobId, taskName: task.taskName },
       'Plaid transaction synchronization enqueued',
     )
-    return NextResponse.json({ status: 'queued', ...task }, { status: 202 })
+    return NextResponse.json(
+      { status: 'queued', syncJobId, ...task },
+      { status: 202 },
+    )
   } catch (error) {
     if (error instanceof AuthFailure) {
       return NextResponse.json({ error: error.code }, { status: error.status })

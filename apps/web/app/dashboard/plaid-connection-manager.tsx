@@ -15,6 +15,17 @@ export interface ConnectionView {
   errorCode: string | null
   reconnectRequiredAt: string | null
   createdAt: string
+  latestSyncJob: {
+    id: string
+    status: 'queued' | 'running' | 'succeeded' | 'failed'
+    trigger: string
+    lastErrorCode: string | null
+    cloudTaskName: string | null
+    result: Record<string, unknown>
+    createdAt: string
+    startedAt: string | null
+    completedAt: string | null
+  } | null
   accounts: {
     id: string
     name: string
@@ -62,6 +73,44 @@ function syncErrorMessage(code: string | undefined) {
       return code === undefined
         ? 'Transactions could not be synchronized.'
         : `Transactions could not be synchronized. Plaid error: ${code}.`
+  }
+}
+
+function numberResult(
+  result: Record<string, unknown>,
+  key: 'added' | 'modified' | 'removed' | 'classified',
+) {
+  const value = result[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function syncJobMessage(connection: ConnectionView) {
+  const job = connection.latestSyncJob
+  if (job === null) return null
+
+  switch (job.status) {
+    case 'queued':
+      return `Sync queued ${new Date(job.createdAt).toLocaleString()}. Refresh shortly to see progress.`
+    case 'running':
+      return `Sync running since ${new Date(
+        job.startedAt ?? job.createdAt,
+      ).toLocaleString()}.`
+    case 'succeeded':
+      return `Latest sync completed ${new Date(
+        job.completedAt ?? job.createdAt,
+      ).toLocaleString()} · ${numberResult(job.result, 'added')} added, ${numberResult(
+        job.result,
+        'modified',
+      )} updated, ${numberResult(job.result, 'removed')} removed, ${numberResult(
+        job.result,
+        'classified',
+      )} classified.`
+    case 'failed':
+      return `${syncErrorMessage(
+        job.lastErrorCode ?? undefined,
+      )} Last attempt failed ${new Date(
+        job.completedAt ?? job.createdAt,
+      ).toLocaleString()}.`
   }
 }
 
@@ -209,7 +258,7 @@ export function PlaidConnectionManager({
         )
       }
       setWorking(false)
-      setStatus('Synchronization queued. Refresh in a minute to see updates.')
+      setStatus('Synchronization queued. Refresh shortly to see progress.')
     } catch (error) {
       setWorking(false)
       setStatus(error instanceof Error ? error.message : 'Sync failed.')
@@ -269,15 +318,30 @@ export function PlaidConnectionManager({
                       {syncErrorMessage(connection.errorCode)}
                     </p>
                   )}
+                  {connection.latestSyncJob === null ? null : (
+                    <p
+                      className={`syncJobText syncJobText-${connection.latestSyncJob.status}`}
+                    >
+                      {syncJobMessage(connection)}
+                    </p>
+                  )}
                 </div>
                 <div className="connectionActions">
                   <button
                     className="secondaryButton"
-                    disabled={working}
+                    disabled={
+                      working ||
+                      connection.latestSyncJob?.status === 'queued' ||
+                      connection.latestSyncJob?.status === 'running'
+                    }
                     onClick={() => sync(connection.id)}
                     type="button"
                   >
-                    Sync now
+                    {connection.latestSyncJob?.status === 'queued'
+                      ? 'Sync queued'
+                      : connection.latestSyncJob?.status === 'running'
+                        ? 'Sync running'
+                        : 'Sync now'}
                   </button>
                   <button
                     className="textButton"

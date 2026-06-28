@@ -23,7 +23,11 @@ type DatabasePool = ReturnType<typeof createDatabasePool>
 type ServerDependencies = {
   allowedTaskQueues?: Set<string>
   logger: Logger
-  plaidSync?: (input: { userId: string; connectionId: string }) => Promise<{
+  plaidSync?: (input: {
+    userId: string
+    connectionId: string
+    syncJobId: string
+  }) => Promise<{
     added: number
     modified: number
     removed: number
@@ -198,6 +202,7 @@ async function handlePlaidSyncTask(
   const result = await plaidSync({
     userId: parsed.data.userId,
     connectionId: parsed.data.connectionId,
+    syncJobId: parsed.data.syncJobId,
   })
 
   return {
@@ -207,6 +212,7 @@ async function handlePlaidSyncTask(
       operation: parsed.data.operation,
       userId: parsed.data.userId,
       connectionId: parsed.data.connectionId,
+      syncJobId: parsed.data.syncJobId,
       ...result,
     }),
   }

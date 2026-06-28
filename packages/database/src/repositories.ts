@@ -21,6 +21,7 @@ import {
   liabilities,
   metricSnapshots,
   recommendations,
+  syncJobs,
   taskExecutions,
   transferMatches,
   transactionSplits,
@@ -1278,6 +1279,85 @@ export class TaskExecutionRepository {
   }
 }
 
+export class SyncJobRepository {
+  constructor(private readonly db: Database) {}
+
+  async createQueued(input: {
+    id: string
+    userId: string
+    connectionId: string
+    operation: string
+    trigger: string
+    idempotencyKey: string
+  }) {
+    const [created] = await this.db
+      .insert(syncJobs)
+      .values({
+        id: input.id,
+        userId: input.userId,
+        connectionId: input.connectionId,
+        operation: input.operation,
+        trigger: input.trigger,
+        idempotencyKey: input.idempotencyKey,
+        status: 'queued',
+      })
+      .returning()
+    return created
+  }
+
+  async markEnqueued(id: string, cloudTaskName: string) {
+    await this.db
+      .update(syncJobs)
+      .set({ cloudTaskName, updatedAt: new Date() })
+      .where(eq(syncJobs.id, id))
+  }
+
+  async markRunning(id: string) {
+    await this.db
+      .update(syncJobs)
+      .set({
+        status: 'running',
+        startedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(syncJobs.id, id))
+  }
+
+  async markSucceeded(id: string, result: Record<string, unknown>) {
+    await this.db
+      .update(syncJobs)
+      .set({
+        status: 'succeeded',
+        completedAt: new Date(),
+        lastErrorCode: null,
+        result,
+        updatedAt: new Date(),
+      })
+      .where(eq(syncJobs.id, id))
+  }
+
+  async markFailed(id: string, errorCode: string) {
+    await this.db
+      .update(syncJobs)
+      .set({
+        status: 'failed',
+        completedAt: new Date(),
+        lastErrorCode: errorCode,
+        updatedAt: new Date(),
+      })
+      .where(eq(syncJobs.id, id))
+  }
+
+  async listRecentForUser(userId: string, limit = 50) {
+    return this.db
+      .select()
+      .from(syncJobs)
+      .where(eq(syncJobs.userId, userId))
+      .orderBy(desc(syncJobs.createdAt))
+      .limit(limit)
+  }
+}
+
 export interface PlaidTransactionInput {
   providerTransactionId: string
   providerAccountId: string
@@ -1310,5 +1390,6 @@ export function createRepositories(db: Database) {
     metrics: new MetricRepository(db),
     recommendations: new RecommendationRepository(db),
     taskExecutions: new TaskExecutionRepository(db),
+    syncJobs: new SyncJobRepository(db),
   }
 }

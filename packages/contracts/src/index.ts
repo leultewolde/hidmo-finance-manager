@@ -35,6 +35,7 @@ export const plaidSyncTaskPayloadSchema = z.object({
   schemaVersion: z.literal(1),
   userId: z.uuid(),
   connectionId: z.uuid(),
+  syncJobId: z.uuid(),
   idempotencyKey: z.string().min(1).max(200),
 })
 
@@ -45,6 +46,7 @@ export const plaidSyncTaskResponseSchema = z.object({
   operation: z.literal('plaid.transactions.sync'),
   userId: z.uuid(),
   connectionId: z.uuid(),
+  syncJobId: z.uuid(),
   added: z.number().int().nonnegative(),
   modified: z.number().int().nonnegative(),
   removed: z.number().int().nonnegative(),

@@ -208,7 +208,8 @@ export function PlaidConnectionManager({
             : syncErrorMessage(body.code),
         )
       }
-      window.location.reload()
+      setWorking(false)
+      setStatus('Synchronization queued. Refresh in a minute to see updates.')
     } catch (error) {
       setWorking(false)
       setStatus(error instanceof Error ? error.message : 'Sync failed.')

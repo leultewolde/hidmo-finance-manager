@@ -29,3 +29,28 @@ export const cloudTaskSmokeResponseSchema = z.object({
 export type CloudTaskSmokeResponse = z.infer<
   typeof cloudTaskSmokeResponseSchema
 >
+
+export const plaidSyncTaskPayloadSchema = z.object({
+  operation: z.literal('plaid.transactions.sync'),
+  schemaVersion: z.literal(1),
+  userId: z.uuid(),
+  connectionId: z.uuid(),
+  idempotencyKey: z.string().min(1).max(200),
+})
+
+export type PlaidSyncTaskPayload = z.infer<typeof plaidSyncTaskPayloadSchema>
+
+export const plaidSyncTaskResponseSchema = z.object({
+  status: z.literal('completed'),
+  operation: z.literal('plaid.transactions.sync'),
+  userId: z.uuid(),
+  connectionId: z.uuid(),
+  added: z.number().int().nonnegative(),
+  modified: z.number().int().nonnegative(),
+  removed: z.number().int().nonnegative(),
+  classified: z.number().int().nonnegative(),
+  transferCandidates: z.number().int().nonnegative(),
+  providerAttempts: z.number().int().nonnegative(),
+})
+
+export type PlaidSyncTaskResponse = z.infer<typeof plaidSyncTaskResponseSchema>

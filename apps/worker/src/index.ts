@@ -5,6 +5,8 @@ import {
   createRepositories,
 } from '@hidmo/database'
 import { createLogger } from '@hidmo/logging'
+import { createPlaidProvider, parseLocalWrappingKey } from '@hidmo/plaid'
+import { refreshClassifications, synchronizePlaidConnection } from '@hidmo/sync'
 
 import { createWorkerServer, parseAllowedTaskQueues } from './server.js'
 
@@ -12,11 +14,34 @@ const environment = getWorkerEnvironment()
 const logger = createLogger('worker', environment.LOG_LEVEL)
 const pool = createDatabasePool(environment.DATABASE_URL)
 const repositories = createRepositories(createDatabase(pool))
+const provider = createPlaidProvider({
+  clientId: environment.PLAID_CLIENT_ID,
+  secret: environment.PLAID_SECRET,
+  environment: environment.PLAID_ENV,
+})
+const wrappingKey = parseLocalWrappingKey(
+  environment.LOCAL_TOKEN_ENCRYPTION_KEY,
+)
 const server = createWorkerServer({
   allowedTaskQueues: parseAllowedTaskQueues(
     environment.CLOUD_TASKS_ALLOWED_QUEUES,
   ),
   logger,
+  plaidSync: async ({ userId, connectionId }) => {
+    const sync = await synchronizePlaidConnection({
+      userId,
+      connectionId,
+      provider,
+      repositories,
+      wrappingKey,
+    })
+    const classification = await refreshClassifications(userId, repositories)
+    logger.info(
+      { userId, connectionId, ...sync, ...classification },
+      'Plaid transactions synchronized by worker',
+    )
+    return { ...sync, ...classification }
+  },
   pool,
   taskExecutions: repositories.taskExecutions,
 })

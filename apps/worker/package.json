@@ -16,7 +16,9 @@
     "@hidmo/config": "workspace:*",
     "@hidmo/contracts": "workspace:*",
     "@hidmo/database": "workspace:*",
-    "@hidmo/logging": "workspace:*"
+    "@hidmo/logging": "workspace:*",
+    "@hidmo/plaid": "workspace:*",
+    "@hidmo/sync": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "26.0.1",

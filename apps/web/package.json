@@ -16,6 +16,7 @@
     "@hidmo/finance-engine": "workspace:*",
     "@hidmo/logging": "workspace:*",
     "@hidmo/plaid": "workspace:*",
+    "@hidmo/sync": "workspace:*",
     "firebase": "12.6.0",
     "firebase-admin": "13.6.0",
     "next": "16.2.9",

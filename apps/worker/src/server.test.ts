@@ -139,4 +139,82 @@ describe('worker health server', () => {
     expect(response.statusCode).toBe(200)
     expect(response.body).toMatchObject({ status: 'duplicate' })
   })
+
+  it('runs a Plaid sync task from the plaid-sync queue', async () => {
+    const plaidSync = vi.fn().mockResolvedValue({
+      added: 2,
+      modified: 1,
+      removed: 0,
+      classified: 3,
+      transferCandidates: 1,
+      providerAttempts: 2,
+    })
+
+    const response = await getWorkerResponse(
+      'POST',
+      '/tasks/plaid-sync',
+      {
+        allowedTaskQueues: new Set(['plaid-sync']),
+        logger: createLogger('test', 'silent'),
+        plaidSync,
+        pool: { query: vi.fn() } as never,
+      },
+      {
+        bodyText: JSON.stringify({
+          operation: 'plaid.transactions.sync',
+          schemaVersion: 1,
+          userId: '00000000-0000-4000-8000-000000000001',
+          connectionId: '00000000-0000-4000-8000-000000000002',
+          idempotencyKey:
+            'plaid-sync:00000000-0000-4000-8000-000000000002:test',
+        }),
+        headers: {
+          'x-cloudtasks-queuename': 'plaid-sync',
+          'x-cloudtasks-taskname': 'plaid-sync-test',
+        },
+      },
+    )
+
+    expect(response.statusCode).toBe(200)
+    expect(response.body).toMatchObject({
+      operation: 'plaid.transactions.sync',
+      status: 'completed',
+      added: 2,
+      classified: 3,
+    })
+    expect(plaidSync).toHaveBeenCalledWith({
+      userId: '00000000-0000-4000-8000-000000000001',
+      connectionId: '00000000-0000-4000-8000-000000000002',
+    })
+  })
+
+  it('rejects Plaid sync tasks from unexpected queues', async () => {
+    const response = await getWorkerResponse(
+      'POST',
+      '/tasks/plaid-sync',
+      {
+        allowedTaskQueues: new Set(['calculation']),
+        logger: createLogger('test', 'silent'),
+        plaidSync: vi.fn(),
+        pool: { query: vi.fn() } as never,
+      },
+      {
+        bodyText: JSON.stringify({
+          operation: 'plaid.transactions.sync',
+          schemaVersion: 1,
+          userId: '00000000-0000-4000-8000-000000000001',
+          connectionId: '00000000-0000-4000-8000-000000000002',
+          idempotencyKey:
+            'plaid-sync:00000000-0000-4000-8000-000000000002:test',
+        }),
+        headers: {
+          'x-cloudtasks-queuename': 'plaid-sync',
+          'x-cloudtasks-taskname': 'plaid-sync-test',
+        },
+      },
+    )
+
+    expect(response.statusCode).toBe(403)
+    expect(response.body).toEqual({ error: 'unexpected_task_queue' })
+  })
 })

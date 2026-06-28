@@ -42,25 +42,23 @@ export interface PlaidWebhookDependencies {
     >
   }
   syncJobs: {
-    createQueued(input: {
+    createQueuedWebhookSyncJob(input: {
       id: string
       userId: string
       connectionId: string
-      operation: string
-      trigger: string
       idempotencyKey: string
-    }): Promise<unknown | undefined>
-    findWebhookCoalescingCandidate(input: {
-      userId: string
-      connectionId: string
       noOpCooldownSince: Date
     }): Promise<
       | {
-          id: string
-          status: string
-          completedAt: Date | null
+          status: 'created'
+          job: { id: string }
         }
-      | undefined
+      | {
+          status: 'coalesced'
+          reason: 'sync_already_active' | 'recent_noop_sync'
+          job: { id: string }
+        }
+      | { status: 'duplicate_webhook' }
     >
     markEnqueued(id: string, cloudTaskName: string): Promise<void>
     markFailed(id: string, errorCode: string): Promise<void>
@@ -106,44 +104,32 @@ export async function handlePlaidWebhookPayload(
   }
 
   const now = dependencies.now ?? (() => new Date())
-  const coalescingCandidate =
-    await dependencies.syncJobs.findWebhookCoalescingCandidate({
-      userId: connection.userId,
-      connectionId: connection.id,
-      noOpCooldownSince: new Date(
-        now().getTime() - WEBHOOK_NO_OP_COOLDOWN_MILLISECONDS,
-      ),
-    })
-  if (coalescingCandidate !== undefined) {
-    return {
-      httpStatus: 202,
-      body: {
-        status: 'ignored',
-        reason:
-          coalescingCandidate.status === 'queued' ||
-          coalescingCandidate.status === 'running'
-            ? 'sync_already_active'
-            : 'recent_noop_sync',
-        connectionId: connection.id,
-        syncJobId: coalescingCandidate.id,
-      },
-    }
-  }
-
   const createId = dependencies.createId ?? randomUUID
   const syncJobId = createId()
   const idempotencyKey = `plaid-webhook:${webhook.item_id}:${webhook.webhook_code}:${
     webhook.webhook_id ?? syncJobId
   }`
-  const created = await dependencies.syncJobs.createQueued({
+  const queued = await dependencies.syncJobs.createQueuedWebhookSyncJob({
     id: syncJobId,
     userId: connection.userId,
     connectionId: connection.id,
-    operation: 'plaid.transactions.sync',
-    trigger: 'webhook',
     idempotencyKey,
+    noOpCooldownSince: new Date(
+      now().getTime() - WEBHOOK_NO_OP_COOLDOWN_MILLISECONDS,
+    ),
   })
-  if (created === undefined) {
+  if (queued.status === 'coalesced') {
+    return {
+      httpStatus: 202,
+      body: {
+        status: 'ignored',
+        reason: queued.reason,
+        connectionId: connection.id,
+        syncJobId: queued.job.id,
+      },
+    }
+  }
+  if (queued.status === 'duplicate_webhook') {
     return {
       httpStatus: 202,
       body: {

@@ -509,6 +509,34 @@ describe('database constraints and transactions', () => {
     expect(latest.completedAt).toBeInstanceOf(Date)
   })
 
+  it('atomically coalesces webhook sync job creation', async () => {
+    const firstJobId = randomUUID()
+    const first = await repositories.syncJobs.createQueuedWebhookSyncJob({
+      id: firstJobId,
+      userId: syntheticIds.user,
+      connectionId: syntheticIds.connection,
+      idempotencyKey: `plaid-webhook:${randomUUID()}`,
+      noOpCooldownSince: new Date(Date.now() - 60_000),
+    })
+    expect(first).toMatchObject({
+      status: 'created',
+      job: { id: firstJobId },
+    })
+
+    const second = await repositories.syncJobs.createQueuedWebhookSyncJob({
+      id: randomUUID(),
+      userId: syntheticIds.user,
+      connectionId: syntheticIds.connection,
+      idempotencyKey: `plaid-webhook:${randomUUID()}`,
+      noOpCooldownSince: new Date(Date.now() - 60_000),
+    })
+    expect(second).toMatchObject({
+      status: 'coalesced',
+      reason: 'sync_already_active',
+      job: { id: firstJobId },
+    })
+  })
+
   it('preserves existing splits when replacement validation fails', async () => {
     const transactionId = syntheticIds.transactions['loan-payment']
     const before = await db

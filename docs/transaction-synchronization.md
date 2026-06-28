@@ -86,6 +86,11 @@ Cloud Tasks delivery is now proven in the GCP development environment. Milestone
 - Cloud Tasks retries are idempotent;
 - Plaid transaction webhooks enqueue the same task type.
 
+If `/transactions/sync` returns no added, modified, or removed transactions,
+the worker skips classification refresh and records `classified = 0` for that
+job. This keeps repeated no-op webhooks cheap while preserving visible sync
+status.
+
 ## Plaid webhook setup
 
 The deployed development webhook URL is:

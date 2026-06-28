@@ -20,6 +20,7 @@ COPY packages/database/package.json packages/database/package.json
 COPY packages/finance-engine/package.json packages/finance-engine/package.json
 COPY packages/logging/package.json packages/logging/package.json
 COPY packages/plaid/package.json packages/plaid/package.json
+COPY packages/sync/package.json packages/sync/package.json
 
 RUN pnpm install --frozen-lockfile
 
@@ -29,6 +30,9 @@ COPY tsconfig.base.json ./
 COPY apps apps
 COPY packages packages
 
+RUN pnpm --filter @hidmo/finance-engine build
+RUN pnpm --filter @hidmo/classification build
+RUN pnpm --filter @hidmo/plaid build
 RUN pnpm --filter './packages/**' build
 
 FROM builder AS web-builder

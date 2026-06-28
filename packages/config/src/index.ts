@@ -25,6 +25,7 @@ const webEnvironmentSchema = commonEnvironmentSchema.extend({
     .enum(['sandbox', 'development', 'production'])
     .default('sandbox'),
   PLAID_SECRET: z.string().min(1),
+  PLAID_WEBHOOK_URL: z.url().optional(),
   WEB_PORT: z.coerce.number().int().positive().max(65_535).default(3000),
 })
 

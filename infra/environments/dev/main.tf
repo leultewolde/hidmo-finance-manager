@@ -66,9 +66,11 @@ locals {
   secret_accessors = {
     "plaid-client-id" = [
       module.service_accounts.emails["web-runtime"],
+      module.service_accounts.emails["worker-runtime"],
     ]
     "plaid-secret" = [
       module.service_accounts.emails["web-runtime"],
+      module.service_accounts.emails["worker-runtime"],
     ]
     "database-url" = [
       module.service_accounts.emails["web-runtime"],
@@ -112,6 +114,14 @@ locals {
   cloud_run_worker_secret_env = {
     DATABASE_URL = {
       secret_name = "database-url"
+      version     = "latest"
+    }
+    PLAID_CLIENT_ID = {
+      secret_name = "plaid-client-id"
+      version     = "latest"
+    }
+    PLAID_SECRET = {
+      secret_name = "plaid-secret"
       version     = "latest"
     }
     LOCAL_TOKEN_ENCRYPTION_KEY = {
@@ -433,9 +443,11 @@ module "cloud_run" {
     calculation_queue             = "calculation"
     invoker_service_account_email = module.service_accounts.emails["tasks-invoker"]
     location                      = var.region
+    plaid_sync_queue              = "plaid-sync"
   }
   worker_environment = merge(var.worker_environment, {
-    CLOUD_TASKS_ALLOWED_QUEUES = "calculation"
+    CLOUD_TASKS_ALLOWED_QUEUES = "calculation,plaid-sync"
+    PLAID_ENV                  = "sandbox"
   })
   migration_environment  = var.migration_environment
   web_secret_env         = local.cloud_run_web_secret_env

@@ -9,13 +9,12 @@ import {
   requireDatabaseOwner,
 } from '../../../../lib/application-services'
 import { AuthFailure, CSRF_COOKIE_NAME } from '../../../../lib/auth-policy'
-import { refreshClassifications } from '../../../../lib/classification-service'
+import { enqueuePlaidSyncTask } from '../../../../lib/cloud-tasks'
 import { connectPlaidItem } from '../../../../lib/plaid-connections'
 import {
   hasSameOrigin,
   hasValidCsrfToken,
 } from '../../../../lib/request-security'
-import { synchronizePlaidConnection } from '../../../../lib/transaction-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -68,16 +67,12 @@ export async function POST(request: NextRequest) {
       wrappingKey: getLocalTokenWrappingKey(),
     })
 
-    let initialSync = 'completed'
+    let initialSync = 'queued'
     try {
-      await synchronizePlaidConnection({
+      await enqueuePlaidSyncTask({
         userId: databaseOwner.id,
         connectionId: result.connectionId,
-        provider: getPlaidProvider(),
-        repositories,
-        wrappingKey: getLocalTokenWrappingKey(),
       })
-      await refreshClassifications(databaseOwner.id, repositories)
     } catch {
       initialSync = 'retry_available'
     }

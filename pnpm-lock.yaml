@@ -65,6 +65,9 @@ importers:
       '@hidmo/plaid':
         specifier: workspace:*
         version: link:../../packages/plaid
+      '@hidmo/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
       firebase:
         specifier: 12.6.0
         version: 12.6.0
@@ -111,6 +114,12 @@ importers:
       '@hidmo/logging':
         specifier: workspace:*
         version: link:../../packages/logging
+      '@hidmo/plaid':
+        specifier: workspace:*
+        version: link:../../packages/plaid
+      '@hidmo/sync':
+        specifier: workspace:*
+        version: link:../../packages/sync
     devDependencies:
       '@types/node':
         specifier: 26.0.1
@@ -184,6 +193,19 @@ importers:
       plaid:
         specifier: 42.2.0
         version: 42.2.0
+
+  packages/sync:
+    dependencies:
+      '@hidmo/classification':
+        specifier: workspace:*
+        version: link:../classification
+      '@hidmo/plaid':
+        specifier: workspace:*
+        version: link:../plaid
+    devDependencies:
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
 
 packages:
 

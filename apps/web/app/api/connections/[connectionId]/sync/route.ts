@@ -3,22 +3,14 @@ import type { NextRequest } from 'next/server'
 
 import { createLogger } from '@hidmo/logging'
 
-import {
-  getLocalTokenWrappingKey,
-  getPlaidProvider,
-  requireDatabaseOwner,
-} from '../../../../../lib/application-services'
+import { requireDatabaseOwner } from '../../../../../lib/application-services'
 import { AuthFailure, CSRF_COOKIE_NAME } from '../../../../../lib/auth-policy'
-import { refreshClassifications } from '../../../../../lib/classification-service'
+import { enqueuePlaidSyncTask } from '../../../../../lib/cloud-tasks'
 import {
   hasSameOrigin,
   hasValidCsrfToken,
 } from '../../../../../lib/request-security'
-import {
-  plaidErrorCode,
-  SyncAlreadyRunningError,
-  synchronizePlaidConnection,
-} from '../../../../../lib/transaction-sync'
+import { plaidErrorCode } from '../../../../../lib/transaction-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,32 +45,29 @@ export async function POST(
 
     const { connectionId } = await context.params
     const { databaseOwner, repositories } = await requireDatabaseOwner()
-    const result = await synchronizePlaidConnection({
+    const connection = await repositories.connections.getTokenEnvelopeForUser(
+      databaseOwner.id,
+      connectionId,
+    )
+    if (connection === undefined) {
+      return NextResponse.json(
+        { error: 'connection-not-found' },
+        { status: 404 },
+      )
+    }
+    const task = await enqueuePlaidSyncTask({
       userId: databaseOwner.id,
       connectionId,
-      provider: getPlaidProvider(),
-      repositories,
-      wrappingKey: getLocalTokenWrappingKey(),
     })
-    const classification = await refreshClassifications(
-      databaseOwner.id,
-      repositories,
-    )
 
     logger.info(
-      { connectionId, ...result, ...classification },
-      'Plaid transactions synchronized',
+      { connectionId, taskName: task.taskName },
+      'Plaid transaction synchronization enqueued',
     )
-    return NextResponse.json({ ...result, ...classification })
+    return NextResponse.json({ status: 'queued', ...task }, { status: 202 })
   } catch (error) {
     if (error instanceof AuthFailure) {
       return NextResponse.json({ error: error.code }, { status: error.status })
-    }
-    if (error instanceof SyncAlreadyRunningError) {
-      return NextResponse.json(
-        { error: 'sync-already-running' },
-        { status: 409 },
-      )
     }
 
     const code = plaidErrorCode(error)
@@ -90,7 +79,7 @@ export async function POST(
       'Plaid transaction synchronization failed',
     )
     return NextResponse.json(
-      { error: 'transaction-sync-failed', code },
+      { error: 'transaction-sync-enqueue-failed', code },
       { status: 502 },
     )
   }

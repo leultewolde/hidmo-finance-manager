@@ -28,7 +28,7 @@
     "lint": "eslint .",
     "test": "dotenv -e .env -- vitest run",
     "test:watch": "dotenv -e .env -- vitest",
-    "typecheck": "pnpm --filter @hidmo/finance-engine build && pnpm --filter './packages/**' typecheck && pnpm --filter './packages/**' build && pnpm --filter './apps/**' typecheck"
+    "typecheck": "pnpm --filter @hidmo/finance-engine build && pnpm --filter @hidmo/classification build && pnpm --filter @hidmo/plaid build && pnpm --filter './packages/**' typecheck && pnpm --filter './packages/**' build && pnpm --filter './apps/**' typecheck"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

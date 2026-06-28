@@ -86,6 +86,7 @@ variable "web_cloud_tasks_environment" {
     calculation_queue             = string
     invoker_service_account_email = string
     location                      = string
+    plaid_sync_queue              = string
   })
   description = "Cloud Tasks environment variables injected into the web service. Worker URL is derived from the worker service URI."
   default     = null

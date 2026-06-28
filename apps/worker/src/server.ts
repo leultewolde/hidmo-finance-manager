@@ -9,8 +9,11 @@ import {
   cloudTaskSmokePayloadSchema,
   cloudTaskSmokeResponseSchema,
   healthResponseSchema,
+  plaidSyncTaskPayloadSchema,
+  plaidSyncTaskResponseSchema,
   type CloudTaskSmokeResponse,
   type HealthResponse,
+  type PlaidSyncTaskResponse,
 } from '@hidmo/contracts'
 import { checkDatabase, type createDatabasePool } from '@hidmo/database'
 import type { Logger } from '@hidmo/logging'
@@ -20,6 +23,14 @@ type DatabasePool = ReturnType<typeof createDatabasePool>
 type ServerDependencies = {
   allowedTaskQueues?: Set<string>
   logger: Logger
+  plaidSync?: (input: { userId: string; connectionId: string }) => Promise<{
+    added: number
+    modified: number
+    removed: number
+    classified: number
+    transferCandidates: number
+    providerAttempts: number
+  }>
   pool: DatabasePool
   taskExecutions?: {
     claim(input: {
@@ -34,13 +45,21 @@ type ServerDependencies = {
 
 type WorkerResponse = {
   statusCode: number
-  body: HealthResponse | CloudTaskSmokeResponse | { error: string }
+  body:
+    | HealthResponse
+    | CloudTaskSmokeResponse
+    | PlaidSyncTaskResponse
+    | { error: string }
 }
 
 function sendJson(
   response: ServerResponse,
   statusCode: number,
-  body: HealthResponse | CloudTaskSmokeResponse | { error: string },
+  body:
+    | HealthResponse
+    | CloudTaskSmokeResponse
+    | PlaidSyncTaskResponse
+    | { error: string },
 ) {
   response.writeHead(statusCode, {
     'content-type': 'application/json; charset=utf-8',
@@ -69,6 +88,39 @@ export function parseAllowedTaskQueues(value: string | undefined) {
   return parseAllowedQueues(value)
 }
 
+function validateCloudTasksRequest(
+  headers: Record<string, string | string[] | undefined> | undefined,
+  allowedTaskQueues: Set<string> | undefined,
+):
+  | { ok: true; queueName: string; taskName: string }
+  | { ok: false; response: WorkerResponse } {
+  const queueName = getHeader(headers, 'x-cloudtasks-queuename')
+  const taskName = getHeader(headers, 'x-cloudtasks-taskname')
+
+  if (queueName === undefined || taskName === undefined) {
+    return {
+      ok: false,
+      response: {
+        statusCode: 401,
+        body: { error: 'missing_cloud_tasks_headers' },
+      },
+    }
+  }
+
+  if (
+    allowedTaskQueues !== undefined &&
+    allowedTaskQueues.size > 0 &&
+    !allowedTaskQueues.has(queueName)
+  ) {
+    return {
+      ok: false,
+      response: { statusCode: 403, body: { error: 'unexpected_task_queue' } },
+    }
+  }
+
+  return { ok: true, queueName, taskName }
+}
+
 async function handleSmokeTask(
   bodyText: string | undefined,
   headers: Record<string, string | string[] | undefined> | undefined,
@@ -78,20 +130,8 @@ async function handleSmokeTask(
     return { statusCode: 503, body: { error: 'task_repository_unavailable' } }
   }
 
-  const queueName = getHeader(headers, 'x-cloudtasks-queuename')
-  const taskName = getHeader(headers, 'x-cloudtasks-taskname')
-
-  if (queueName === undefined || taskName === undefined) {
-    return { statusCode: 401, body: { error: 'missing_cloud_tasks_headers' } }
-  }
-
-  if (
-    allowedTaskQueues !== undefined &&
-    allowedTaskQueues.size > 0 &&
-    !allowedTaskQueues.has(queueName)
-  ) {
-    return { statusCode: 403, body: { error: 'unexpected_task_queue' } }
-  }
+  const validation = validateCloudTasksRequest(headers, allowedTaskQueues)
+  if (!validation.ok) return validation.response
 
   const parsed = cloudTaskSmokePayloadSchema.safeParse(
     bodyText === undefined || bodyText.length === 0
@@ -117,7 +157,7 @@ async function handleSmokeTask(
         status: 'duplicate',
         operation: parsed.data.operation,
         idempotencyKey: parsed.data.idempotencyKey,
-        taskName,
+        taskName: validation.taskName,
       }),
     }
   }
@@ -129,7 +169,45 @@ async function handleSmokeTask(
       status: 'completed',
       operation: parsed.data.operation,
       idempotencyKey: parsed.data.idempotencyKey,
-      taskName,
+      taskName: validation.taskName,
+    }),
+  }
+}
+
+async function handlePlaidSyncTask(
+  bodyText: string | undefined,
+  headers: Record<string, string | string[] | undefined> | undefined,
+  { allowedTaskQueues, plaidSync }: ServerDependencies,
+): Promise<WorkerResponse> {
+  if (plaidSync === undefined) {
+    return { statusCode: 503, body: { error: 'plaid_sync_unavailable' } }
+  }
+
+  const validation = validateCloudTasksRequest(headers, allowedTaskQueues)
+  if (!validation.ok) return validation.response
+
+  const parsed = plaidSyncTaskPayloadSchema.safeParse(
+    bodyText === undefined || bodyText.length === 0
+      ? undefined
+      : JSON.parse(bodyText),
+  )
+  if (!parsed.success) {
+    return { statusCode: 400, body: { error: 'invalid_task_payload' } }
+  }
+
+  const result = await plaidSync({
+    userId: parsed.data.userId,
+    connectionId: parsed.data.connectionId,
+  })
+
+  return {
+    statusCode: 200,
+    body: plaidSyncTaskResponseSchema.parse({
+      status: 'completed',
+      operation: parsed.data.operation,
+      userId: parsed.data.userId,
+      connectionId: parsed.data.connectionId,
+      ...result,
     }),
   }
 }
@@ -191,6 +269,19 @@ export async function getWorkerResponse(
     } catch (error) {
       logger.error({ err: error }, 'worker smoke task failed')
       return { statusCode: 400, body: { error: 'invalid_task_request' } }
+    }
+  }
+
+  if (method === 'POST' && path === '/tasks/plaid-sync') {
+    try {
+      return await handlePlaidSyncTask(
+        request?.bodyText,
+        request?.headers,
+        dependencies,
+      )
+    } catch (error) {
+      logger.error({ err: error }, 'worker Plaid sync task failed')
+      return { statusCode: 500, body: { error: 'plaid_sync_task_failed' } }
     }
   }
 

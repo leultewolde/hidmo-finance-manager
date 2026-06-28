@@ -320,6 +320,81 @@ li {
   text-transform: capitalize;
 }
 
+.syncHistory {
+  margin-top: 18px;
+  border-top: 1px solid #30362d;
+  color: #cbd3c5;
+}
+
+.syncHistory summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 0 0;
+  color: #f6f3eb;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.syncHistory summary span {
+  color: #8d9789;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.syncHistory ul {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.syncHistory li {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(220px, 1.2fr);
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid #30362d;
+  border-radius: 12px;
+  background: rgb(0 0 0 / 12%);
+}
+
+.syncHistory li div {
+  display: grid;
+  gap: 5px;
+}
+
+.syncHistory li strong {
+  font-size: 0.9rem;
+  text-transform: capitalize;
+}
+
+.syncHistory li span {
+  color: #8d9789;
+  font-size: 0.82rem;
+}
+
+.syncHistoryResult {
+  align-self: center;
+  justify-self: end;
+  text-align: right;
+}
+
+.syncHistoryResult-queued,
+.syncHistoryResult-running {
+  color: #f2cf76 !important;
+}
+
+.syncHistoryResult-succeeded {
+  color: #a6ce78 !important;
+}
+
+.syncHistoryResult-failed {
+  color: #ff9e8f !important;
+}
+
 .transactionsSection {
   margin-top: 72px;
   padding-top: 64px;
@@ -777,8 +852,14 @@ li {
   }
 
   .classificationContext,
-  .reviewControls {
+  .reviewControls,
+  .syncHistory li {
     grid-template-columns: 1fr;
+  }
+
+  .syncHistoryResult {
+    justify-self: start;
+    text-align: left;
   }
 
   .reviewAmount {

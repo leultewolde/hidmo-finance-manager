@@ -7,6 +7,18 @@ import {
   type PlaidLinkOnSuccess,
 } from 'react-plaid-link'
 
+type SyncJobView = {
+  id: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed'
+  trigger: string
+  lastErrorCode: string | null
+  cloudTaskName: string | null
+  result: Record<string, unknown>
+  createdAt: string
+  startedAt: string | null
+  completedAt: string | null
+}
+
 export interface ConnectionView {
   id: string
   institutionName: string
@@ -15,17 +27,8 @@ export interface ConnectionView {
   errorCode: string | null
   reconnectRequiredAt: string | null
   createdAt: string
-  latestSyncJob: {
-    id: string
-    status: 'queued' | 'running' | 'succeeded' | 'failed'
-    trigger: string
-    lastErrorCode: string | null
-    cloudTaskName: string | null
-    result: Record<string, unknown>
-    createdAt: string
-    startedAt: string | null
-    completedAt: string | null
-  } | null
+  latestSyncJob: SyncJobView | null
+  recentSyncJobs: SyncJobView[]
   accounts: {
     id: string
     name: string
@@ -82,6 +85,34 @@ function numberResult(
 ) {
   const value = result[key]
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function syncJobCompletedAt(job: SyncJobView) {
+  return job.completedAt ?? job.startedAt ?? job.createdAt
+}
+
+function formatSyncTrigger(trigger: string) {
+  return trigger
+    .split(/[-_.\s]+/)
+    .filter(Boolean)
+    .map((part) => `${part[0]?.toUpperCase() ?? ''}${part.slice(1)}`)
+    .join(' ')
+}
+
+function syncResultSummary(job: SyncJobView) {
+  if (job.status === 'queued') return 'Waiting for worker'
+  if (job.status === 'running') return 'Worker is processing'
+  if (job.status === 'failed') {
+    return syncErrorMessage(job.lastErrorCode ?? undefined)
+  }
+
+  return `${numberResult(job.result, 'added')} added · ${numberResult(
+    job.result,
+    'modified',
+  )} updated · ${numberResult(job.result, 'removed')} removed · ${numberResult(
+    job.result,
+    'classified',
+  )} classified`
 }
 
 function syncJobMessage(connection: ConnectionView) {
@@ -372,6 +403,33 @@ export function PlaidConnectionManager({
                   </li>
                 ))}
               </ul>
+              {connection.recentSyncJobs.length === 0 ? null : (
+                <details className="syncHistory">
+                  <summary>
+                    Recent syncs
+                    <span>{connection.recentSyncJobs.length} shown</span>
+                  </summary>
+                  <ul>
+                    {connection.recentSyncJobs.map((job) => (
+                      <li key={job.id}>
+                        <div>
+                          <strong>
+                            {formatSyncTrigger(job.trigger)} · {job.status}
+                          </strong>
+                          <span>
+                            {new Date(syncJobCompletedAt(job)).toLocaleString()}
+                          </span>
+                        </div>
+                        <span
+                          className={`syncHistoryResult syncHistoryResult-${job.status}`}
+                        >
+                          {syncResultSummary(job)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
             </article>
           ))}
         </div>

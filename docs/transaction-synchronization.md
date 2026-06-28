@@ -99,6 +99,8 @@ webhook-triggered sync.
 
 The current webhook handler:
 
+- is attached to new Plaid Items through the `webhook` field on
+  `/link/token/create` when `PLAID_WEBHOOK_URL` is configured;
 - accepts public HTTPS requests from Plaid;
 - validates the minimal webhook envelope;
 - ignores unsupported webhook types and unknown Items without leaking details;

@@ -73,6 +73,16 @@ export interface PlaidProviderConfiguration {
   clientId: string
   secret: string
   environment: 'sandbox' | 'development' | 'production'
+  webhookUrl?: string
+  client?: Pick<
+    PlaidApi,
+    | 'linkTokenCreate'
+    | 'itemPublicTokenExchange'
+    | 'itemGet'
+    | 'accountsGet'
+    | 'transactionsSync'
+    | 'itemRemove'
+  >
 }
 
 function mapAccount(account: AccountBase): PlaidAccount {
@@ -151,17 +161,19 @@ export function createPlaidProvider(
     throw new Error('Unsupported Plaid environment')
   }
 
-  const client = new PlaidApi(
-    new Configuration({
-      basePath,
-      baseOptions: {
-        headers: {
-          'PLAID-CLIENT-ID': configuration.clientId,
-          'PLAID-SECRET': configuration.secret,
+  const client =
+    configuration.client ??
+    new PlaidApi(
+      new Configuration({
+        basePath,
+        baseOptions: {
+          headers: {
+            'PLAID-CLIENT-ID': configuration.clientId,
+            'PLAID-SECRET': configuration.secret,
+          },
         },
-      },
-    }),
-  )
+      }),
+    )
 
   return {
     async createLinkToken(clientUserId) {
@@ -170,6 +182,9 @@ export function createPlaidProvider(
         country_codes: [CountryCode.Us],
         language: 'en',
         products: [Products.Transactions],
+        ...(configuration.webhookUrl === undefined
+          ? {}
+          : { webhook: configuration.webhookUrl }),
         required_if_supported_products: [
           Products.Investments,
           Products.Liabilities,

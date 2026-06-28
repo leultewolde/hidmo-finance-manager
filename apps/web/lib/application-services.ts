@@ -33,6 +33,9 @@ export function getPlaidProvider() {
     clientId: environment.PLAID_CLIENT_ID,
     secret: environment.PLAID_SECRET,
     environment: environment.PLAID_ENV,
+    ...(environment.PLAID_WEBHOOK_URL === undefined
+      ? {}
+      : { webhookUrl: environment.PLAID_WEBHOOK_URL }),
   })
 }
 

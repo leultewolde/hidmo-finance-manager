@@ -438,6 +438,7 @@ module "cloud_run" {
     FIREBASE_OWNER_UID  = var.owner_firebase_uid
     FIREBASE_PROJECT_ID = var.project_id
     PLAID_ENV           = "sandbox"
+    PLAID_WEBHOOK_URL   = "https://finance-web-wn5w6w4mva-ue.a.run.app/api/plaid/webhook"
   })
   web_cloud_tasks_environment = {
     calculation_queue             = "calculation"

@@ -84,7 +84,32 @@ Cloud Tasks delivery is now proven in the GCP development environment. Milestone
 - the worker runs `/transactions/sync`;
 - task status is visible in the dashboard;
 - Cloud Tasks retries are idempotent;
-- webhooks and scheduled reconciliation enqueue the same task type.
+- Plaid transaction webhooks enqueue the same task type.
+
+## Plaid webhook setup
+
+The deployed development webhook URL is:
+
+```text
+https://finance-web-wn5w6w4mva-ue.a.run.app/api/plaid/webhook
+```
+
+Add that URL in the Plaid Dashboard for the Sandbox application when testing
+webhook-triggered sync.
+
+The current webhook handler:
+
+- accepts public HTTPS requests from Plaid;
+- validates the minimal webhook envelope;
+- ignores unsupported webhook types and unknown Items without leaking details;
+- enqueues a sync job for transaction update webhooks;
+- stores the job with `trigger = webhook`;
+- uses Plaid `webhook_id` when present to avoid duplicate task enqueueing on
+  retried webhook delivery.
+
+Signature verification is intentionally not complete yet. Before using this
+with real financial data outside Sandbox, implement Plaid's current webhook
+verification flow and store only minimal, redacted event metadata.
 
 ## Current scope
 

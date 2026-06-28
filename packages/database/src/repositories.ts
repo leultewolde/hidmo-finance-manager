@@ -1418,6 +1418,81 @@ export class SyncJobRepository {
 
     return candidate
   }
+
+  async createQueuedWebhookSyncJob(input: {
+    id: string
+    userId: string
+    connectionId: string
+    idempotencyKey: string
+    noOpCooldownSince: Date
+  }): Promise<
+    | { status: 'created'; job: typeof syncJobs.$inferSelect }
+    | {
+        status: 'coalesced'
+        reason: 'sync_already_active' | 'recent_noop_sync'
+        job: typeof syncJobs.$inferSelect
+      }
+    | { status: 'duplicate_webhook' }
+  > {
+    return this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`plaid-webhook-sync:${input.connectionId}`}))`,
+      )
+
+      const [candidate] = await tx
+        .select()
+        .from(syncJobs)
+        .where(
+          and(
+            eq(syncJobs.userId, input.userId),
+            eq(syncJobs.connectionId, input.connectionId),
+            eq(syncJobs.operation, 'plaid.transactions.sync'),
+            or(
+              inArray(syncJobs.status, ['queued', 'running']),
+              and(
+                eq(syncJobs.trigger, 'webhook'),
+                eq(syncJobs.status, 'succeeded'),
+                gte(syncJobs.completedAt, input.noOpCooldownSince),
+                sql`coalesce((${syncJobs.result}->>'added')::integer, 0) = 0`,
+                sql`coalesce((${syncJobs.result}->>'modified')::integer, 0) = 0`,
+                sql`coalesce((${syncJobs.result}->>'removed')::integer, 0) = 0`,
+              ),
+            ),
+          ),
+        )
+        .orderBy(desc(syncJobs.createdAt))
+        .limit(1)
+
+      if (candidate !== undefined) {
+        return {
+          status: 'coalesced',
+          reason:
+            candidate.status === 'queued' || candidate.status === 'running'
+              ? 'sync_already_active'
+              : 'recent_noop_sync',
+          job: candidate,
+        }
+      }
+
+      const [created] = await tx
+        .insert(syncJobs)
+        .values({
+          id: input.id,
+          userId: input.userId,
+          connectionId: input.connectionId,
+          operation: 'plaid.transactions.sync',
+          trigger: 'webhook',
+          idempotencyKey: input.idempotencyKey,
+          status: 'queued',
+        })
+        .onConflictDoNothing({ target: syncJobs.idempotencyKey })
+        .returning()
+
+      return created === undefined
+        ? { status: 'duplicate_webhook' }
+        : { status: 'created', job: created }
+    })
+  }
 }
 
 export interface PlaidTransactionInput {

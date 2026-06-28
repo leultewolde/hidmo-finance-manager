@@ -37,11 +37,34 @@ export default async function DashboardPage() {
     string,
     (typeof recentSyncJobs)[number]
   >()
+  const syncJobsByConnection = new Map<
+    string,
+    (typeof recentSyncJobs)[number][]
+  >()
   for (const job of recentSyncJobs) {
     if (!latestSyncJobByConnection.has(job.connectionId)) {
       latestSyncJobByConnection.set(job.connectionId, job)
     }
+    const jobs = syncJobsByConnection.get(job.connectionId) ?? []
+    if (jobs.length < 5) {
+      jobs.push(job)
+      syncJobsByConnection.set(job.connectionId, jobs)
+    }
   }
+  const serializeSyncJob = (job: (typeof recentSyncJobs)[number]) => ({
+    id: job.id,
+    status: job.status,
+    trigger: job.trigger,
+    lastErrorCode: job.lastErrorCode,
+    cloudTaskName: job.cloudTaskName,
+    result:
+      typeof job.result === 'object' && job.result !== null
+        ? (job.result as Record<string, unknown>)
+        : {},
+    createdAt: job.createdAt.toISOString(),
+    startedAt: job.startedAt?.toISOString() ?? null,
+    completedAt: job.completedAt?.toISOString() ?? null,
+  })
   const connections: ConnectionView[] = connectionRows.map((connection) => ({
     id: connection.id,
     institutionName: connection.institutionName,
@@ -54,21 +77,11 @@ export default async function DashboardPage() {
     latestSyncJob: (() => {
       const job = latestSyncJobByConnection.get(connection.id)
       if (job === undefined) return null
-      return {
-        id: job.id,
-        status: job.status,
-        trigger: job.trigger,
-        lastErrorCode: job.lastErrorCode,
-        cloudTaskName: job.cloudTaskName,
-        result:
-          typeof job.result === 'object' && job.result !== null
-            ? (job.result as Record<string, unknown>)
-            : {},
-        createdAt: job.createdAt.toISOString(),
-        startedAt: job.startedAt?.toISOString() ?? null,
-        completedAt: job.completedAt?.toISOString() ?? null,
-      }
+      return serializeSyncJob(job)
     })(),
+    recentSyncJobs: (syncJobsByConnection.get(connection.id) ?? []).map(
+      serializeSyncJob,
+    ),
     accounts: connection.accounts.map((account) => ({
       id: account.id,
       name: account.name,

@@ -14,6 +14,7 @@ function setup() {
       createQueued: vi.fn().mockResolvedValue({
         id: '00000000-0000-4000-8000-000000000003',
       }),
+      findWebhookCoalescingCandidate: vi.fn().mockResolvedValue(undefined),
       markEnqueued: vi.fn().mockResolvedValue(undefined),
       markFailed: vi.fn().mockResolvedValue(undefined),
     },
@@ -135,6 +136,68 @@ describe('Plaid webhook handling', () => {
       '00000000-0000-4000-8000-000000000003',
       'TASK_ENQUEUE_FAILED',
     )
+  })
+
+  it('does not enqueue when another sync is already queued for the connection', async () => {
+    const dependencies = setup()
+    dependencies.syncJobs.findWebhookCoalescingCandidate.mockResolvedValue({
+      id: '00000000-0000-4000-8000-000000000004',
+      status: 'queued',
+      completedAt: null,
+    })
+
+    const result = await handlePlaidWebhookPayload(
+      {
+        webhook_type: 'TRANSACTIONS',
+        webhook_code: 'SYNC_UPDATES_AVAILABLE',
+        item_id: 'item-123',
+        webhook_id: 'webhook-123',
+      },
+      dependencies,
+    )
+
+    expect(result).toEqual({
+      httpStatus: 202,
+      body: {
+        status: 'ignored',
+        reason: 'sync_already_active',
+        connectionId: '00000000-0000-4000-8000-000000000002',
+        syncJobId: '00000000-0000-4000-8000-000000000004',
+      },
+    })
+    expect(dependencies.syncJobs.createQueued).not.toHaveBeenCalled()
+    expect(dependencies.enqueuePlaidSyncTask).not.toHaveBeenCalled()
+  })
+
+  it('does not enqueue after a recent no-op webhook sync', async () => {
+    const dependencies = setup()
+    dependencies.syncJobs.findWebhookCoalescingCandidate.mockResolvedValue({
+      id: '00000000-0000-4000-8000-000000000004',
+      status: 'succeeded',
+      completedAt: new Date('2026-06-28T18:10:38.000Z'),
+    })
+
+    const result = await handlePlaidWebhookPayload(
+      {
+        webhook_type: 'TRANSACTIONS',
+        webhook_code: 'SYNC_UPDATES_AVAILABLE',
+        item_id: 'item-123',
+        webhook_id: 'webhook-123',
+      },
+      dependencies,
+    )
+
+    expect(result).toEqual({
+      httpStatus: 202,
+      body: {
+        status: 'ignored',
+        reason: 'recent_noop_sync',
+        connectionId: '00000000-0000-4000-8000-000000000002',
+        syncJobId: '00000000-0000-4000-8000-000000000004',
+      },
+    })
+    expect(dependencies.syncJobs.createQueued).not.toHaveBeenCalled()
+    expect(dependencies.enqueuePlaidSyncTask).not.toHaveBeenCalled()
   })
 
   it('does not enqueue duplicate webhook deliveries', async () => {

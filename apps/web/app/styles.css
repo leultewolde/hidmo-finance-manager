@@ -275,6 +275,59 @@ li {
   color: #ff9e8f !important;
 }
 
+.connectionHealth {
+  display: grid;
+  gap: 6px;
+  max-width: 52rem;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid;
+  border-radius: 12px;
+  background: rgb(0 0 0 / 12%);
+}
+
+.connectionHealth strong {
+  font-size: 0.92rem;
+}
+
+.connectionHealth span {
+  color: #adb5aa;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.connectionHealth-healthy {
+  border-color: rgb(166 206 120 / 34%);
+}
+
+.connectionHealth-healthy strong {
+  color: #a6ce78;
+}
+
+.connectionHealth-syncing {
+  border-color: rgb(242 207 118 / 34%);
+}
+
+.connectionHealth-syncing strong {
+  color: #f2cf76;
+}
+
+.connectionHealth-warning {
+  border-color: rgb(229 189 114 / 34%);
+}
+
+.connectionHealth-warning strong {
+  color: #e5bd72;
+}
+
+.connectionHealth-error {
+  border-color: rgb(255 158 143 / 34%);
+}
+
+.connectionHealth-error strong {
+  color: #ff9e8f;
+}
+
 .syncJobText {
   margin-top: 10px;
   max-width: 52rem;

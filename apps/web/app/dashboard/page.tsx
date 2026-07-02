@@ -65,32 +65,6 @@ export default async function DashboardPage() {
     startedAt: job.startedAt?.toISOString() ?? null,
     completedAt: job.completedAt?.toISOString() ?? null,
   })
-  const connections: ConnectionView[] = connectionRows.map((connection) => ({
-    id: connection.id,
-    institutionName: connection.institutionName,
-    status: connection.status,
-    lastSuccessfulSyncAt:
-      connection.lastSuccessfulSyncAt?.toISOString() ?? null,
-    errorCode: connection.errorCode,
-    reconnectRequiredAt: connection.reconnectRequiredAt?.toISOString() ?? null,
-    createdAt: connection.createdAt.toISOString(),
-    latestSyncJob: (() => {
-      const job = latestSyncJobByConnection.get(connection.id)
-      if (job === undefined) return null
-      return serializeSyncJob(job)
-    })(),
-    recentSyncJobs: (syncJobsByConnection.get(connection.id) ?? []).map(
-      serializeSyncJob,
-    ),
-    accounts: connection.accounts.map((account) => ({
-      id: account.id,
-      name: account.name,
-      mask: account.mask,
-      kind: account.kind,
-      currentBalanceMinor: account.currentBalanceMinor.toString(),
-      currency: account.currency,
-    })),
-  }))
   const transactionRows =
     await ownerContext.repositories.transactions.listRecentForUser(
       ownerContext.databaseOwner.id,
@@ -107,6 +81,75 @@ export default async function DashboardPage() {
         ownerContext.databaseOwner.id,
       ),
     ])
+  const transactionCountsByAccount = new Map<string, number>()
+  const latestTransactionDateByAccount = new Map<string, string>()
+  for (const transaction of transactionDetails.transactions) {
+    transactionCountsByAccount.set(
+      transaction.accountId,
+      (transactionCountsByAccount.get(transaction.accountId) ?? 0) + 1,
+    )
+    const latestTransactionDate = latestTransactionDateByAccount.get(
+      transaction.accountId,
+    )
+    if (
+      latestTransactionDate === undefined ||
+      transaction.postedDate > latestTransactionDate
+    ) {
+      latestTransactionDateByAccount.set(
+        transaction.accountId,
+        transaction.postedDate,
+      )
+    }
+  }
+  const connections: ConnectionView[] = connectionRows.map((connection) => {
+    const transactionCount = connection.accounts.reduce(
+      (count, account) =>
+        count + (transactionCountsByAccount.get(account.id) ?? 0),
+      0,
+    )
+    const latestTransactionDate = connection.accounts.reduce<string | null>(
+      (latest, account) => {
+        const accountLatest = latestTransactionDateByAccount.get(account.id)
+        if (accountLatest === undefined) return latest
+        if (latest === null || accountLatest > latest) return accountLatest
+        return latest
+      },
+      null,
+    )
+
+    return {
+      id: connection.id,
+      institutionName: connection.institutionName,
+      status: connection.status,
+      lastSuccessfulSyncAt:
+        connection.lastSuccessfulSyncAt?.toISOString() ?? null,
+      errorCode: connection.errorCode,
+      reconnectRequiredAt:
+        connection.reconnectRequiredAt?.toISOString() ?? null,
+      createdAt: connection.createdAt.toISOString(),
+      health: {
+        accountCount: connection.accounts.length,
+        transactionCount,
+        latestTransactionDate,
+      },
+      latestSyncJob: (() => {
+        const job = latestSyncJobByConnection.get(connection.id)
+        if (job === undefined) return null
+        return serializeSyncJob(job)
+      })(),
+      recentSyncJobs: (syncJobsByConnection.get(connection.id) ?? []).map(
+        serializeSyncJob,
+      ),
+      accounts: connection.accounts.map((account) => ({
+        id: account.id,
+        name: account.name,
+        mask: account.mask,
+        kind: account.kind,
+        currentBalanceMinor: account.currentBalanceMinor.toString(),
+        currency: account.currency,
+      })),
+    }
+  })
   const splitCounts = new Map<string, number>()
   for (const split of transactionDetails.splits) {
     splitCounts.set(

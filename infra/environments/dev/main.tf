@@ -186,6 +186,41 @@ locals {
       filter      = "resource.type=\"cloud_run_revision\" AND httpRequest.requestUrl:(\"/api/health/live\" OR \"/api/health/ready\") AND httpRequest.status < 400"
     }
   }
+
+  log_alert_metrics = {
+    worker_plaid_sync_task_failures = {
+      description         = "Counts worker Plaid sync task failures."
+      filter              = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"finance-worker\" AND jsonPayload.msg=\"worker Plaid sync task failed\""
+      alert_display_name  = "Finance dev worker Plaid sync task failures"
+      alert_documentation = <<-EOT
+        A Plaid sync Cloud Task failed inside the worker.
+
+        Start with Cloud Run logs for `finance-worker`, then inspect the matching sync job in the dashboard sync history. Common causes are Plaid API errors, token decryption failures, database connectivity, or worker runtime regressions.
+      EOT
+    }
+
+    worker_cloud_tasks_smoke_failures = {
+      description         = "Counts worker Cloud Tasks smoke task failures."
+      filter              = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"finance-worker\" AND jsonPayload.msg=\"worker smoke task failed\""
+      alert_display_name  = "Finance dev worker Cloud Tasks smoke failures"
+      alert_documentation = <<-EOT
+        A Cloud Tasks smoke task reached the worker but failed.
+
+        Check the manual deploy workflow smoke-test step, Cloud Run logs for `finance-worker`, and the `calculation` queue. This usually indicates task authentication, payload validation, or worker runtime issues.
+      EOT
+    }
+
+    web_cloud_tasks_enqueue_failures = {
+      description         = "Counts web service failures when enqueueing Cloud Tasks."
+      filter              = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"finance-web\" AND (jsonPayload.msg=\"Cloud Tasks smoke task enqueue failed\" OR jsonPayload.msg=\"Plaid transaction synchronization failed\")"
+      alert_display_name  = "Finance dev web Cloud Tasks enqueue failures"
+      alert_documentation = <<-EOT
+        The web service failed while enqueueing a Cloud Task.
+
+        Check Cloud Run logs for `finance-web`, Cloud Tasks queue permissions, the `tasks-invoker` service account, and Cloud Tasks API availability.
+      EOT
+    }
+  }
 }
 
 resource "google_project_iam_custom_role" "firebase_auth_session" {
@@ -470,13 +505,15 @@ module "monitoring" {
   count  = var.enable_runtime_infrastructure ? 1 : 0
   source = "../../modules/monitoring"
 
-  project_id         = var.project_id
-  project_number     = tostring(data.google_project.this.number)
-  billing_account_id = var.billing_account_id
-  budget_amount_usd  = var.budget_amount_usd
-  budget_thresholds  = var.budget_thresholds
-  create_budget      = var.create_budget
-  logging_exclusions = local.logging_exclusions
+  project_id                  = var.project_id
+  project_number              = tostring(data.google_project.this.number)
+  billing_account_id          = var.billing_account_id
+  budget_amount_usd           = var.budget_amount_usd
+  budget_thresholds           = var.budget_thresholds
+  create_budget               = var.create_budget
+  logging_exclusions          = local.logging_exclusions
+  log_alert_metrics           = local.log_alert_metrics
+  alert_notification_channels = var.alert_notification_channels
 
   depends_on = [module.project_services]
 }

@@ -3,16 +3,25 @@ name: Manual Deploy Dev
 on:
   workflow_dispatch:
     inputs:
+      image_source:
+        description: 'Image source for deployment.'
+        required: true
+        default: latest_main_artifacts
+        type: choice
+        options:
+          - latest_main_artifacts
+          - current_deployed
+          - explicit_inputs
       web_image:
-        description: 'Immutable web image. Leave blank to use DEV_WEB_IMAGE.'
+        description: 'Immutable web image. Required only when image_source=explicit_inputs.'
         required: false
         type: string
       worker_image:
-        description: 'Immutable worker image. Leave blank to use DEV_WORKER_IMAGE.'
+        description: 'Immutable worker image. Required only when image_source=explicit_inputs.'
         required: false
         type: string
       migration_image:
-        description: 'Immutable migrations image. Leave blank to use DEV_MIGRATION_IMAGE.'
+        description: 'Immutable migrations image. Required only when image_source=explicit_inputs.'
         required: false
         type: string
       run_migrations:
@@ -36,6 +45,7 @@ concurrency:
 env:
   PROJECT_ID: finance-manager-dev-500423
   REGION: us-east1
+  IMAGE_REPOSITORY: us-east1-docker.pkg.dev/finance-manager-dev-500423/finance-images
   TERRAFORM_VERSION: 1.12.2
   TERRAFORM_WORKING_DIRECTORY: infra/environments/dev
   TF_IN_AUTOMATION: 'true'
@@ -142,9 +152,22 @@ jobs:
           done
           exit "$missing"
 
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_TERRAFORM_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          version: '>= 363.0.0'
+          project_id: ${{ env.PROJECT_ID }}
+
       - name: Resolve image inputs
         id: images
         env:
+          IMAGE_SOURCE: ${{ inputs.image_source }}
           INPUT_WEB_IMAGE: ${{ inputs.web_image }}
           INPUT_WORKER_IMAGE: ${{ inputs.worker_image }}
           INPUT_MIGRATION_IMAGE: ${{ inputs.migration_image }}
@@ -152,9 +175,50 @@ jobs:
           DEFAULT_WORKER_IMAGE: ${{ vars.DEV_WORKER_IMAGE }}
           DEFAULT_MIGRATION_IMAGE: ${{ vars.DEV_MIGRATION_IMAGE }}
         run: |
-          web_image="${INPUT_WEB_IMAGE:-$DEFAULT_WEB_IMAGE}"
-          worker_image="${INPUT_WORKER_IMAGE:-$DEFAULT_WORKER_IMAGE}"
-          migration_image="${INPUT_MIGRATION_IMAGE:-$DEFAULT_MIGRATION_IMAGE}"
+          set -euo pipefail
+
+          resolve_main_digest() {
+            local image_name="$1"
+            local digest
+
+            digest="$(gcloud artifacts docker images describe \
+              "${IMAGE_REPOSITORY}/${image_name}:main" \
+              --project "${PROJECT_ID}" \
+              --format='value(image_summary.digest)')"
+
+            if [ -z "$digest" ]; then
+              echo "::error::Could not resolve ${image_name}:main to an immutable digest."
+              exit 1
+            fi
+
+            echo "${IMAGE_REPOSITORY}/${image_name}@${digest}"
+          }
+
+          case "$IMAGE_SOURCE" in
+            latest_main_artifacts)
+              web_image="$(resolve_main_digest web)"
+              worker_image="$(resolve_main_digest worker)"
+              migration_image="$(resolve_main_digest migrations)"
+              ;;
+            current_deployed)
+              web_image="$DEFAULT_WEB_IMAGE"
+              worker_image="$DEFAULT_WORKER_IMAGE"
+              migration_image="$DEFAULT_MIGRATION_IMAGE"
+              ;;
+            explicit_inputs)
+              web_image="$INPUT_WEB_IMAGE"
+              worker_image="$INPUT_WORKER_IMAGE"
+              migration_image="$INPUT_MIGRATION_IMAGE"
+              if [ -z "$web_image" ] || [ -z "$worker_image" ] || [ -z "$migration_image" ]; then
+                echo "::error::web_image, worker_image, and migration_image are required when image_source=explicit_inputs."
+                exit 1
+              fi
+              ;;
+            *)
+              echo "::error::Unsupported image_source: ${IMAGE_SOURCE}"
+              exit 1
+              ;;
+          esac
 
           if ! [[ "$web_image" =~ ^us-east1-docker\.pkg\.dev/finance-manager-dev-500423/finance-images/web@sha256:[0-9a-f]{64}$ ]]; then
             echo "::error::web_image must be an immutable web image digest."
@@ -181,13 +245,8 @@ jobs:
             echo "web_image=${web_image}"
             echo "worker_image=${worker_image}"
             echo "migration_image=${migration_image}"
+            echo "image_source=${IMAGE_SOURCE}"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v3
-        with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_TERRAFORM_DEPLOY_SERVICE_ACCOUNT }}
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
@@ -274,6 +333,7 @@ jobs:
         working-directory: ${{ env.TERRAFORM_WORKING_DIRECTORY }}
         env:
           PLAN_EXIT_CODE: ${{ steps.plan.outputs.exit_code }}
+          IMAGE_SOURCE: ${{ steps.images.outputs.image_source }}
           WEB_IMAGE: ${{ steps.images.outputs.web_image }}
           WORKER_IMAGE: ${{ steps.images.outputs.worker_image }}
           MIGRATION_IMAGE: ${{ steps.images.outputs.migration_image }}
@@ -286,6 +346,8 @@ jobs:
             elif [ "$PLAN_EXIT_CODE" = "2" ]; then
               echo "Terraform found deployment changes within the allowed Cloud Run scope."
             fi
+            echo
+            echo "Image source: \`${IMAGE_SOURCE}\`"
             echo
             echo "\`\`\`hcl"
             echo "web_image = \"${WEB_IMAGE}\""

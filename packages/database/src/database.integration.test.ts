@@ -6,6 +6,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import {
+  buildFinancialAnalysisSummary,
   calculateBalanceSheet,
   calculateCashFlow,
   syntheticHousehold,
@@ -140,6 +141,59 @@ describe('database migrations and synthetic seed', () => {
         syntheticHousehold.loanPaymentSplits,
       ),
     )
+  })
+
+  it('builds financial analysis input from persisted read-model data', async () => {
+    const period = { startDate: '2026-06-01', endDate: '2026-06-30' }
+    const input = await repositories.analysisInputs.buildForPeriod(
+      syntheticIds.user,
+      period,
+    )
+    const summary = buildFinancialAnalysisSummary(input).value
+
+    expect(input).toMatchObject({
+      period,
+      reviewedTransactionsOnly: true,
+    })
+    expect(input.accounts).toHaveLength(7)
+    expect(input.debts).toHaveLength(3)
+    expect(input.transactions).toHaveLength(11)
+    expect(input.splits).toHaveLength(3)
+    expect(input.budgetLines).toEqual(
+      [...syntheticHousehold.budget].sort((left, right) =>
+        left.category.localeCompare(right.category),
+      ),
+    )
+    expect(summary).toMatchObject({
+      currency: 'USD',
+      balanceSheet: {
+        totalAssetsMinor: 5_950_000n,
+        totalLiabilitiesMinor: 1_940_000n,
+        netWorthMinor: 4_010_000n,
+        liquidCashMinor: 1_250_000n,
+      },
+      cashFlow: {
+        incomeMinor: 500_000n,
+        netExpensesMinor: 246_500n,
+        freeCashFlowMinor: 253_500n,
+      },
+      debt: {
+        totalDebtMinor: 1_940_000n,
+        minimumPaymentsMinor: 55_000n,
+        highInterestDebtMinor: 210_000n,
+      },
+      budgetBaseline: {
+        essentialExpensesMinor: 235_000n,
+        savingsCapacityAfterMinimumDebtMinor: 198_500n,
+      },
+    })
+    expect(summary.coverage.coverageNotes.map((note) => note.code)).toEqual([
+      'reviewed-transactions-only',
+      'pending-transactions-excluded',
+      'estimated-balances-present',
+      'manual-balances-present',
+      'investment-balances-included',
+    ])
   })
 })
 

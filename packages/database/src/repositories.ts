@@ -14,6 +14,10 @@ import {
 
 import type {
   Account,
+  AccountKind,
+  AnalysisInput,
+  DatePeriod,
+  Debt,
   Transaction,
   TransactionSplit,
 } from '@hidmo/finance-engine'
@@ -38,6 +42,20 @@ import {
   transactions,
   users,
 } from './schema.js'
+
+function toDebtKind(kind: AccountKind): Debt['kind'] {
+  switch (kind) {
+    case 'credit_card':
+    case 'personal_loan':
+    case 'auto_loan':
+    case 'student_loan':
+    case 'mortgage':
+    case 'line_of_credit':
+      return kind
+    default:
+      throw new Error(`Unsupported liability account kind: ${kind}`)
+  }
+}
 
 export class UserRepository {
   constructor(private readonly db: Database) {}
@@ -910,6 +928,136 @@ export class BudgetRepository {
   }
 }
 
+export class AnalysisInputRepository {
+  constructor(private readonly db: Database) {}
+
+  async buildForPeriod(
+    userId: string,
+    period: DatePeriod,
+  ): Promise<AnalysisInput> {
+    const accountRows = await this.db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.userId, userId), eq(accounts.active, true)))
+      .orderBy(asc(accounts.id))
+
+    const liabilityRows = await this.db
+      .select({
+        id: liabilities.id,
+        accountId: liabilities.accountId,
+        accountName: accounts.name,
+        kind: liabilities.kind,
+        principalBalanceMinor: liabilities.principalBalanceMinor,
+        aprBps: liabilities.aprBps,
+        minimumPaymentMinor: liabilities.minimumPaymentMinor,
+        currency: accounts.currency,
+      })
+      .from(liabilities)
+      .innerJoin(accounts, eq(liabilities.accountId, accounts.id))
+      .where(
+        and(
+          eq(liabilities.userId, userId),
+          eq(accounts.userId, userId),
+          eq(accounts.active, true),
+        ),
+      )
+      .orderBy(asc(liabilities.id))
+
+    const transactionRows = await this.db
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.removed, false),
+          gte(transactions.postedDate, period.startDate),
+          sql`${transactions.postedDate} <= ${period.endDate}`,
+        ),
+      )
+      .orderBy(asc(transactions.postedDate), asc(transactions.id))
+
+    const transactionIds = transactionRows.map((row) => row.id)
+    const splitRows =
+      transactionIds.length === 0
+        ? []
+        : await this.db
+            .select()
+            .from(transactionSplits)
+            .where(
+              and(
+                eq(transactionSplits.userId, userId),
+                inArray(transactionSplits.transactionId, transactionIds),
+              ),
+            )
+            .orderBy(asc(transactionSplits.id))
+
+    const budget = await new BudgetRepository(this.db).getForPeriod(
+      userId,
+      period.startDate,
+      period.endDate,
+    )
+
+    return {
+      period,
+      reviewedTransactionsOnly: true,
+      accounts: accountRows.map(
+        (row): Account => ({
+          id: row.id,
+          name: row.name,
+          kind: row.kind,
+          balanceMinor: row.currentBalanceMinor,
+          currency: row.currency,
+          ...(row.creditLimitMinor === null
+            ? {}
+            : { creditLimitMinor: row.creditLimitMinor }),
+          balanceAsOf: row.balanceAsOf,
+          balanceSource: row.balanceSource,
+          dataQuality: row.dataQuality,
+        }),
+      ),
+      debts: liabilityRows.map(
+        (row): Debt => ({
+          id: row.accountId,
+          name: row.accountName,
+          kind: toDebtKind(row.kind),
+          balanceMinor: row.principalBalanceMinor,
+          aprBps: row.aprBps ?? 0,
+          minimumPaymentMinor: row.minimumPaymentMinor ?? 0n,
+          currency: row.currency,
+        }),
+      ),
+      transactions: transactionRows.map(
+        (row): Transaction => ({
+          id: row.id,
+          accountId: row.accountId,
+          postedDate: row.postedDate,
+          amountMinor: row.normalizedAmountMinor,
+          currency: row.currency,
+          direction: row.normalizedAmountMinor >= 0n ? 'inflow' : 'outflow',
+          economicType: row.economicType,
+          category: row.appCategory,
+          state: row.state,
+          reviewed: row.userReviewed,
+        }),
+      ),
+      splits: splitRows.map(
+        (row): TransactionSplit => ({
+          id: row.id,
+          transactionId: row.transactionId,
+          amountMinor: row.amountMinor,
+          economicType: row.economicType,
+          category: row.category,
+        }),
+      ),
+      budgetLines:
+        budget?.lines.map((line) => ({
+          category: line.category,
+          plannedMinor: line.plannedMinor,
+        })) ?? [],
+    }
+  }
+}
+
 export class TransferRepository {
   constructor(private readonly db: Database) {}
 
@@ -1614,6 +1762,7 @@ export function createRepositories(db: Database) {
     classificationRules: new ClassificationRuleRepository(db),
     liabilities: new LiabilityRepository(db),
     budgets: new BudgetRepository(db),
+    analysisInputs: new AnalysisInputRepository(db),
     metrics: new MetricRepository(db),
     recommendations: new RecommendationRepository(db),
     taskExecutions: new TaskExecutionRepository(db),

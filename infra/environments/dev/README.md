@@ -671,7 +671,10 @@ manually during normal deploys.
 
 ### Step 4: run a manual deployment
 
-Use the latest image digest values from the `CD Artifacts` workflow output.
+Use this after the `CD Artifacts` workflow has published images from `main`.
+The deploy workflow can resolve the latest `:main` Artifact Registry tags into
+immutable digests automatically, so you should not need to copy image digests
+for the normal path.
 
 GitHub repository
 → Actions
@@ -687,12 +690,23 @@ main
 Inputs:
 
 ```text
-web_image=<new web digest or blank to use DEV_WEB_IMAGE>
-worker_image=<new worker digest or blank to use DEV_WORKER_IMAGE>
-migration_image=<new migrations digest or blank to use DEV_MIGRATION_IMAGE>
+image_source=latest_main_artifacts
+web_image=
+worker_image=
+migration_image=
 run_migrations=true or false
 confirm_apply=true
 ```
+
+Image source options:
+
+- `latest_main_artifacts`: normal path. Resolve `web:main`, `worker:main`,
+  and `migrations:main` from Artifact Registry to immutable `@sha256` digests.
+- `current_deployed`: use the current `DEV_*_IMAGE` repository variables.
+  This is useful for rerunning smoke tests or migrations without changing
+  images.
+- `explicit_inputs`: require manually pasted immutable image digests in
+  `web_image`, `worker_image`, and `migration_image`.
 
 Review the plan job summary. If the plan is acceptable, approve the waiting
 `dev` environment deployment.

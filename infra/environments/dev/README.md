@@ -784,6 +784,100 @@ After applying the alert resources, list their Terraform outputs:
 terraform output monitoring_alert_policy_names
 ```
 
+### Plaid sync troubleshooting runbook
+
+Start in the dashboard before using logs:
+
+1. Open the deployed web app:
+
+   ```text
+   https://finance-web-wn5w6w4mva-ue.a.run.app
+   ```
+
+2. In the connected institution card, check:
+
+   - connection health;
+   - latest sync status;
+   - trigger source: Manual or Webhook;
+   - recent sync history;
+   - error code, if shown.
+
+3. If the latest sync says `Queued`, refresh after a few seconds. Cloud Tasks
+   may still be delivering the worker request.
+
+4. If the latest sync says `Running`, wait briefly and refresh. A small
+   Sandbox sync should usually finish quickly.
+
+5. If the latest sync says `Failed`, use the dashboard retry button first. The
+   retry uses the same manual sync queue path and should create a new sync job
+   unless another sync is already active.
+
+6. If the connection says reconnect is required, do not keep retrying normal
+   sync. Remove the connection and connect the Sandbox institution again until
+   Plaid update-mode reconnect is implemented.
+
+Use logs only when the dashboard state is not enough.
+
+Webhook received/enqueued:
+
+```bash
+gcloud logging read \
+  'resource.type="cloud_run_revision"
+   resource.labels.service_name="finance-web"
+   jsonPayload.msg:"Plaid webhook"' \
+  --project finance-manager-dev-500423 \
+  --limit 30 \
+  --format='table(timestamp,jsonPayload.msg,jsonPayload.status,jsonPayload.reason,jsonPayload.connectionId,jsonPayload.syncJobId)'
+```
+
+Worker sync completed:
+
+```bash
+gcloud logging read \
+  'resource.type="cloud_run_revision"
+   resource.labels.service_name="finance-worker"
+   jsonPayload.msg="Plaid transactions synchronized by worker"' \
+  --project finance-manager-dev-500423 \
+  --limit 30 \
+  --format='table(timestamp,jsonPayload.connectionId,jsonPayload.syncJobId,jsonPayload.trigger,jsonPayload.operation,jsonPayload.previousStatus,jsonPayload.added,jsonPayload.modified,jsonPayload.removed,jsonPayload.classified)'
+```
+
+Worker sync failed:
+
+```bash
+gcloud logging read \
+  'resource.type="cloud_run_revision"
+   resource.labels.service_name="finance-worker"
+   jsonPayload.msg="worker Plaid sync task failed"' \
+  --project finance-manager-dev-500423 \
+  --limit 20 \
+  --format='table(timestamp,jsonPayload.connectionId,jsonPayload.syncJobId,jsonPayload.errorCode,jsonPayload.err.message)'
+```
+
+Cloud Tasks delivery and smoke-test issues:
+
+```bash
+gcloud logging read \
+  'resource.type="cloud_run_revision"
+   resource.labels.service_name="finance-worker"
+   (jsonPayload.msg="worker smoke task failed" OR jsonPayload.msg="worker request rejected")' \
+  --project finance-manager-dev-500423 \
+  --limit 20 \
+  --format='table(timestamp,jsonPayload.msg,jsonPayload.err.message)'
+```
+
+Manual sync enqueue/coalescing:
+
+```bash
+gcloud logging read \
+  'resource.type="cloud_run_revision"
+   resource.labels.service_name="finance-web"
+   (jsonPayload.msg="Plaid transaction synchronization enqueued" OR jsonPayload.msg="Plaid manual sync coalesced")' \
+  --project finance-manager-dev-500423 \
+  --limit 20 \
+  --format='table(timestamp,jsonPayload.msg,jsonPayload.connectionId,jsonPayload.syncJobId,jsonPayload.reason)'
+```
+
 ### Alert verification runbook
 
 Confirm Terraform-managed alert policies exist:

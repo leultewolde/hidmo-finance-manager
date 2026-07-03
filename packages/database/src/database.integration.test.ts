@@ -484,6 +484,15 @@ describe('database constraints and transactions', () => {
     expect(created.status).toBe('queued')
 
     await repositories.syncJobs.markEnqueued(jobId, 'plaid-sync/tasks/test')
+    const logContext = await repositories.syncJobs.getLogContext(jobId)
+    expect(logContext).toMatchObject({
+      id: jobId,
+      connectionId: syntheticIds.connection,
+      operation: 'plaid.transactions.sync',
+      trigger: 'manual',
+      status: 'queued',
+    })
+
     await repositories.syncJobs.markRunning(jobId)
     await repositories.syncJobs.markSucceeded(jobId, {
       added: 1,

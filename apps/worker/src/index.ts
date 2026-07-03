@@ -6,7 +6,11 @@ import {
 } from '@hidmo/database'
 import { createLogger } from '@hidmo/logging'
 import { createPlaidProvider, parseLocalWrappingKey } from '@hidmo/plaid'
-import { refreshClassifications, synchronizePlaidConnection } from '@hidmo/sync'
+import {
+  plaidErrorCode,
+  refreshClassifications,
+  synchronizePlaidConnection,
+} from '@hidmo/sync'
 
 import { runPlaidSyncJob } from './plaid-sync-handler.js'
 import { createWorkerServer, parseAllowedTaskQueues } from './server.js'
@@ -29,35 +33,57 @@ const server = createWorkerServer({
   ),
   logger,
   plaidSync: async ({ userId, connectionId, syncJobId }) => {
-    const result = await runPlaidSyncJob(
-      { userId, connectionId, syncJobId },
-      {
-        markRunning: repositories.syncJobs.markRunning.bind(
-          repositories.syncJobs,
-        ),
-        markSucceeded: repositories.syncJobs.markSucceeded.bind(
-          repositories.syncJobs,
-        ),
-        markFailed: repositories.syncJobs.markFailed.bind(
-          repositories.syncJobs,
-        ),
-        synchronize: ({ userId, connectionId }) =>
-          synchronizePlaidConnection({
-            userId,
-            connectionId,
-            provider,
-            repositories,
-            wrappingKey,
-          }),
-        refreshClassifications: (userId) =>
-          refreshClassifications(userId, repositories),
-      },
-    )
-    logger.info(
-      { userId, connectionId, syncJobId, ...result },
-      'Plaid transactions synchronized by worker',
-    )
-    return result
+    const syncJob = await repositories.syncJobs.getLogContext(syncJobId)
+    const logContext = {
+      userId,
+      connectionId,
+      syncJobId,
+      operation: syncJob?.operation ?? 'unknown',
+      trigger: syncJob?.trigger ?? 'unknown',
+      previousStatus: syncJob?.status ?? 'unknown',
+    }
+
+    try {
+      const result = await runPlaidSyncJob(
+        { userId, connectionId, syncJobId },
+        {
+          markRunning: repositories.syncJobs.markRunning.bind(
+            repositories.syncJobs,
+          ),
+          markSucceeded: repositories.syncJobs.markSucceeded.bind(
+            repositories.syncJobs,
+          ),
+          markFailed: repositories.syncJobs.markFailed.bind(
+            repositories.syncJobs,
+          ),
+          synchronize: ({ userId, connectionId }) =>
+            synchronizePlaidConnection({
+              userId,
+              connectionId,
+              provider,
+              repositories,
+              wrappingKey,
+            }),
+          refreshClassifications: (userId) =>
+            refreshClassifications(userId, repositories),
+        },
+      )
+      logger.info(
+        { ...logContext, ...result },
+        'Plaid transactions synchronized by worker',
+      )
+      return result
+    } catch (error) {
+      logger.error(
+        {
+          ...logContext,
+          errorCode: plaidErrorCode(error),
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        },
+        'Plaid transaction synchronization failed by worker',
+      )
+      throw error
+    }
   },
   pool,
   taskExecutions: repositories.taskExecutions,

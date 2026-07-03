@@ -1378,6 +1378,22 @@ export class SyncJobRepository {
       .where(eq(syncJobs.id, id))
   }
 
+  async getLogContext(id: string) {
+    const [job] = await this.db
+      .select({
+        id: syncJobs.id,
+        userId: syncJobs.userId,
+        connectionId: syncJobs.connectionId,
+        operation: syncJobs.operation,
+        trigger: syncJobs.trigger,
+        status: syncJobs.status,
+      })
+      .from(syncJobs)
+      .where(eq(syncJobs.id, id))
+      .limit(1)
+    return job
+  }
+
   async listRecentForUser(userId: string, limit = 50) {
     return this.db
       .select()

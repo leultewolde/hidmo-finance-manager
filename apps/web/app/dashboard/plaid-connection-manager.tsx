@@ -301,7 +301,7 @@ function syncJobMessage(connection: ConnectionView) {
     case 'failed':
       return `${syncErrorMessage(
         job.lastErrorCode ?? undefined,
-      )} Last attempt failed ${formatDateTime(
+      )} Retry uses the same safe manual sync queue. Last attempt failed ${formatDateTime(
         job.completedAt ?? job.createdAt,
       )}.`
   }
@@ -324,6 +324,21 @@ function syncJobDetails(job: SyncJobView) {
   }
 
   return details
+}
+
+function syncActionLabel(connection: ConnectionView, needsReconnect: boolean) {
+  if (needsReconnect) return 'Reconnect required'
+
+  switch (connection.latestSyncJob?.status) {
+    case 'queued':
+      return 'Sync queued'
+    case 'running':
+      return 'Sync running'
+    case 'failed':
+      return 'Retry sync'
+    default:
+      return 'Sync now'
+  }
 }
 
 function disconnectErrorMessage(code: string | undefined) {
@@ -549,6 +564,7 @@ function ConnectionCard({
 }) {
   const health = connectionHealth(connection)
   const needsReconnect = connectionNeedsReconnect(connection)
+  const syncButtonLabel = syncActionLabel(connection, needsReconnect)
 
   return (
     <article className="connectionCard">
@@ -612,11 +628,7 @@ function ConnectionCard({
             onClick={() => sync(connection.id)}
             type="button"
           >
-            {connection.latestSyncJob?.status === 'queued'
-              ? 'Sync queued'
-              : connection.latestSyncJob?.status === 'running'
-                ? 'Sync running'
-                : 'Sync now'}
+            {syncButtonLabel}
           </button>
           <button
             className="textButton"

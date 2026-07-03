@@ -765,6 +765,57 @@ After applying the alert resources, list their Terraform outputs:
 terraform output monitoring_alert_policy_names
 ```
 
+### Alert verification runbook
+
+Confirm Terraform-managed alert policies exist:
+
+```bash
+gcloud monitoring policies list \
+  --project finance-manager-dev-500423 \
+  --filter='displayName:"Finance dev"' \
+  --format='table(displayName,enabled,name)'
+```
+
+Confirm logs that would feed each alert can be queried:
+
+```bash
+gcloud logging read \
+  'resource.type="cloud_run_revision"
+   resource.labels.service_name="finance-worker"
+   jsonPayload.msg="worker Plaid sync task failed"' \
+  --project finance-manager-dev-500423 \
+  --limit 5 \
+  --format='table(timestamp,jsonPayload.msg,jsonPayload.err.message)'
+
+gcloud logging read \
+  'resource.type="cloud_run_revision"
+   resource.labels.service_name="finance-worker"
+   jsonPayload.msg="worker smoke task failed"' \
+  --project finance-manager-dev-500423 \
+  --limit 5 \
+  --format='table(timestamp,jsonPayload.msg,jsonPayload.err.message)'
+
+gcloud logging read \
+  'resource.type="cloud_run_revision"
+   resource.labels.service_name="finance-web"
+   (jsonPayload.msg="Cloud Tasks smoke task enqueue failed" OR jsonPayload.msg="Plaid transaction synchronization failed")' \
+  --project finance-manager-dev-500423 \
+  --limit 5 \
+  --format='table(timestamp,jsonPayload.msg,jsonPayload.errorCode)'
+```
+
+Check for open incidents in:
+
+Google Cloud Console
+→ Monitoring
+→ Alerting
+→ Incidents
+
+Do not intentionally break Plaid credentials, service account permissions, or
+Cloud Tasks IAM just to test alerts. If we need a safe synthetic alert test
+later, add an explicit test-only signal instead of inducing production
+configuration failures.
+
 ## Important notes
 
 - Do not put secret values in `terraform.tfvars`.

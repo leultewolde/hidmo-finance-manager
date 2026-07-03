@@ -16,6 +16,7 @@ import { plaidErrorCode } from '../../../../../lib/transaction-sync'
 export const dynamic = 'force-dynamic'
 
 const logger = createLogger('web-plaid-sync')
+const MANUAL_NO_OP_COOLDOWN_MILLISECONDS = 60_000
 
 export async function POST(
   request: NextRequest,
@@ -58,14 +59,33 @@ export async function POST(
     }
     const syncJobId = randomUUID()
     const idempotencyKey = `plaid-sync:${connectionId}:${syncJobId}`
-    await repositories.syncJobs.createQueued({
+    const queued = await repositories.syncJobs.createQueuedManualSyncJob({
       id: syncJobId,
       userId: databaseOwner.id,
       connectionId,
-      operation: 'plaid.transactions.sync',
-      trigger: 'manual',
       idempotencyKey,
+      noOpCooldownSince: new Date(
+        Date.now() - MANUAL_NO_OP_COOLDOWN_MILLISECONDS,
+      ),
     })
+    if (queued.status === 'coalesced') {
+      logger.info(
+        {
+          connectionId,
+          syncJobId: queued.job.id,
+          reason: queued.reason,
+        },
+        'Plaid manual sync coalesced',
+      )
+      return NextResponse.json(
+        {
+          status: 'ignored',
+          reason: queued.reason,
+          syncJobId: queued.job.id,
+        },
+        { status: 202 },
+      )
+    }
 
     let task: Awaited<ReturnType<typeof enqueuePlaidSyncTask>>
     try {

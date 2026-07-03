@@ -398,11 +398,14 @@ export function PlaidConnectionManager({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ csrfToken }),
       })
+      const body = (await response.json().catch(() => ({}))) as {
+        code?: string
+        error?: string
+        reason?: string
+        status?: string
+        syncJobId?: string
+      }
       if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as {
-          code?: string
-          error?: string
-        }
         throw new Error(
           response.status === 409
             ? 'A synchronization is already running.'
@@ -410,7 +413,15 @@ export function PlaidConnectionManager({
         )
       }
       setWorking(false)
-      setStatus('Synchronization queued. Refresh shortly to see progress.')
+      if (body.status === 'ignored') {
+        setStatus(
+          body.reason === 'recent_noop_sync'
+            ? 'Recent synchronization found no changes. Wait about a minute before syncing again.'
+            : 'A synchronization is already queued or running. Refresh shortly to see progress.',
+        )
+      } else {
+        setStatus('Synchronization queued. Refresh shortly to see progress.')
+      }
     } catch (error) {
       setWorking(false)
       setStatus(error instanceof Error ? error.message : 'Sync failed.')

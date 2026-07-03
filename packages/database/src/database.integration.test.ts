@@ -546,6 +546,83 @@ describe('database constraints and transactions', () => {
     })
   })
 
+  it('coalesces manual sync job creation when a sync is active', async () => {
+    const connectionId = randomUUID()
+    await db.insert(connections).values({
+      id: connectionId,
+      userId: syntheticIds.user,
+      plaidItemId: `manual-active-${randomUUID()}`,
+    })
+
+    const firstJobId = randomUUID()
+    const first = await repositories.syncJobs.createQueuedManualSyncJob({
+      id: firstJobId,
+      userId: syntheticIds.user,
+      connectionId,
+      idempotencyKey: `plaid-sync:${connectionId}:${firstJobId}`,
+      noOpCooldownSince: new Date(Date.now() - 60_000),
+    })
+    expect(first).toMatchObject({
+      status: 'created',
+      job: { id: firstJobId },
+    })
+
+    const second = await repositories.syncJobs.createQueuedManualSyncJob({
+      id: randomUUID(),
+      userId: syntheticIds.user,
+      connectionId,
+      idempotencyKey: `plaid-sync:${connectionId}:${randomUUID()}`,
+      noOpCooldownSince: new Date(Date.now() - 60_000),
+    })
+    expect(second).toMatchObject({
+      status: 'coalesced',
+      reason: 'sync_already_active',
+      job: { id: firstJobId },
+    })
+  })
+
+  it('coalesces manual sync job creation after a recent no-op sync', async () => {
+    const connectionId = randomUUID()
+    await db.insert(connections).values({
+      id: connectionId,
+      userId: syntheticIds.user,
+      plaidItemId: `manual-noop-${randomUUID()}`,
+    })
+
+    const firstJobId = randomUUID()
+    const first = await repositories.syncJobs.createQueuedManualSyncJob({
+      id: firstJobId,
+      userId: syntheticIds.user,
+      connectionId,
+      idempotencyKey: `plaid-sync:${connectionId}:${firstJobId}`,
+      noOpCooldownSince: new Date(Date.now() - 60_000),
+    })
+    expect(first).toMatchObject({
+      status: 'created',
+      job: { id: firstJobId },
+    })
+    await repositories.syncJobs.markRunning(firstJobId)
+    await repositories.syncJobs.markSucceeded(firstJobId, {
+      added: 0,
+      modified: 0,
+      removed: 0,
+      classified: 0,
+    })
+
+    const second = await repositories.syncJobs.createQueuedManualSyncJob({
+      id: randomUUID(),
+      userId: syntheticIds.user,
+      connectionId,
+      idempotencyKey: `plaid-sync:${connectionId}:${randomUUID()}`,
+      noOpCooldownSince: new Date(Date.now() - 60_000),
+    })
+    expect(second).toMatchObject({
+      status: 'coalesced',
+      reason: 'recent_noop_sync',
+      job: { id: firstJobId },
+    })
+  })
+
   it('preserves existing splits when replacement validation fails', async () => {
     const transactionId = syntheticIds.transactions['loan-payment']
     const before = await db

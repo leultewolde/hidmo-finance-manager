@@ -97,6 +97,17 @@ export const syncJobStatusEnum = pgEnum('sync_job_status', [
   'succeeded',
   'failed',
 ])
+export const analysisSnapshotStatusEnum = pgEnum('analysis_snapshot_status', [
+  'draft',
+  'complete',
+  'failed',
+])
+export const analysisJobStatusEnum = pgEnum('analysis_job_status', [
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+])
 
 export const users = pgTable(
   'users',
@@ -706,8 +717,89 @@ export const syncJobs = pgTable(
   ],
 )
 
+export const analysisSnapshots = pgTable(
+  'analysis_snapshots',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    periodStart: date('period_start').notNull(),
+    periodEnd: date('period_end').notNull(),
+    inputHash: text('input_hash').notNull(),
+    formulaVersion: text('formula_version').notNull(),
+    deterministicSummary: jsonb('deterministic_summary').notNull(),
+    narrative: jsonb('narrative'),
+    status: analysisSnapshotStatusEnum('status').notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    lastErrorCode: text('last_error_code'),
+    ...timestamps,
+  },
+  (table) => [
+    index('analysis_snapshots_user_created_idx').on(
+      table.userId,
+      table.createdAt,
+    ),
+    index('analysis_snapshots_user_period_idx').on(
+      table.userId,
+      table.periodStart,
+      table.periodEnd,
+    ),
+    uniqueIndex('analysis_snapshots_input_unique').on(
+      table.userId,
+      table.periodStart,
+      table.periodEnd,
+      table.inputHash,
+      table.formulaVersion,
+    ),
+    check(
+      'analysis_snapshots_period_order',
+      sql`${table.periodStart} <= ${table.periodEnd}`,
+    ),
+  ],
+)
+
+export const analysisJobs = pgTable(
+  'analysis_jobs',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    snapshotId: uuid('snapshot_id').references(() => analysisSnapshots.id, {
+      onDelete: 'set null',
+    }),
+    periodStart: date('period_start').notNull(),
+    periodEnd: date('period_end').notNull(),
+    inputHash: text('input_hash').notNull(),
+    formulaVersion: text('formula_version').notNull(),
+    status: analysisJobStatusEnum('status').notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    lastErrorCode: text('last_error_code'),
+    ...timestamps,
+  },
+  (table) => [
+    index('analysis_jobs_user_created_idx').on(table.userId, table.createdAt),
+    index('analysis_jobs_user_status_idx').on(table.userId, table.status),
+    uniqueIndex('analysis_jobs_input_unique').on(
+      table.userId,
+      table.periodStart,
+      table.periodEnd,
+      table.inputHash,
+      table.formulaVersion,
+    ),
+    check(
+      'analysis_jobs_period_order',
+      sql`${table.periodStart} <= ${table.periodEnd}`,
+    ),
+  ],
+)
+
 export type UserRow = typeof users.$inferSelect
 export type AccountRow = typeof accounts.$inferSelect
 export type TransactionRow = typeof transactions.$inferSelect
 export type LiabilityRow = typeof liabilities.$inferSelect
 export type SyncJobRow = typeof syncJobs.$inferSelect
+export type AnalysisSnapshotRow = typeof analysisSnapshots.$inferSelect
+export type AnalysisJobRow = typeof analysisJobs.$inferSelect

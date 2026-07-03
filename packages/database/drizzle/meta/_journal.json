@@ -29,6 +29,13 @@
       "when": 1782606939571,
       "tag": "0003_sync_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783103243866,
+      "tag": "0004_analysis_snapshots",
+      "breakpoints": true
     }
   ]
 }

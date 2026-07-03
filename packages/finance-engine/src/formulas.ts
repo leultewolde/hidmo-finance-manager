@@ -47,4 +47,9 @@ export const formulaDefinitions = {
     description:
       'Monthly simple-interest simulation with minimum payments first and optional avalanche or snowball extra-payment allocation.',
   },
+  financialAnalysisSummary: {
+    version: 'financial-analysis-summary/v1',
+    description:
+      'Deterministic household summary for AI-assisted financial analysis and budget recommendations.',
+  },
 } as const satisfies Record<string, FormulaDefinition>

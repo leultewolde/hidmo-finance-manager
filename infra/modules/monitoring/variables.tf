@@ -57,3 +57,9 @@ variable "alert_notification_channels" {
   description = "Cloud Monitoring notification channel resource names used by alert policies. Leave empty to create console-visible alerts without notifications."
   default     = []
 }
+
+variable "log_alert_metric_propagation_delay" {
+  type        = string
+  description = "Delay after creating log-based metrics before creating alert policies that reference them."
+  default     = "600s"
+}

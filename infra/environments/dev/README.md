@@ -728,6 +728,11 @@ in Cloud Monitoring but do not send email/SMS/pager notifications. This keeps
 the first apply simple and avoids requiring console-managed notification
 channel IDs.
 
+The first apply waits up to 10 minutes after creating the log-based metrics
+before creating the alert policies. This avoids a Cloud Monitoring propagation
+race where a newly created log metric exists in Logging but is not yet
+queryable by Monitoring alert policies.
+
 To add notifications later:
 
 1. Create a notification channel in:

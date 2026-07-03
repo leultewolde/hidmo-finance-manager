@@ -172,7 +172,7 @@ export class ConnectionRepository {
       .where(
         and(
           eq(connections.userId, userId),
-          eq(connections.status, 'active'),
+          inArray(connections.status, ['active', 'attention_required']),
           isNotNull(connections.encryptedAccessToken),
         ),
       )
@@ -290,7 +290,7 @@ export class ConnectionRepository {
         and(
           eq(connections.id, connectionId),
           eq(connections.userId, userId),
-          eq(connections.status, 'active'),
+          inArray(connections.status, ['active', 'attention_required']),
         ),
       )
       .limit(1)

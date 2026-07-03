@@ -74,7 +74,7 @@ function syncErrorMessage(code: string | undefined) {
     case 'PRODUCT_NOT_READY':
       return 'Plaid is still preparing transactions. Wait about a minute, then try Sync now again.'
     case 'ITEM_LOGIN_REQUIRED':
-      return 'Plaid requires this institution to be reconnected.'
+      return 'Plaid requires this institution to be reconnected before new transactions can sync.'
     case 'INVALID_ACCESS_TOKEN':
       return 'This Plaid connection is no longer valid. Disconnect it and connect it again.'
     case 'RATE_LIMIT_EXCEEDED':
@@ -198,6 +198,16 @@ function connectionHealth(connection: ConnectionView): {
     title: 'Data current',
     details,
   }
+}
+
+function connectionNeedsReconnect(connection: ConnectionView) {
+  return (
+    connection.status === 'attention_required' ||
+    connection.reconnectRequiredAt !== null ||
+    connection.errorCode === 'ITEM_LOGIN_REQUIRED' ||
+    connection.errorCode === 'INVALID_ACCESS_TOKEN' ||
+    connection.errorCode === 'ITEM_NOT_SUPPORTED'
+  )
 }
 
 function numberResult(
@@ -458,7 +468,11 @@ export function PlaidConnectionManager({
       if (!response.ok) {
         throw new Error(
           response.status === 409
-            ? 'A synchronization is already running.'
+            ? body.code === 'ITEM_LOGIN_REQUIRED' ||
+              body.code === 'INVALID_ACCESS_TOKEN' ||
+              body.code === 'ITEM_NOT_SUPPORTED'
+              ? syncErrorMessage(body.code)
+              : 'A synchronization is already running.'
             : syncErrorMessage(body.code),
         )
       }
@@ -534,6 +548,7 @@ function ConnectionCard({
   working: boolean
 }) {
   const health = connectionHealth(connection)
+  const needsReconnect = connectionNeedsReconnect(connection)
 
   return (
     <article className="connectionCard">
@@ -560,6 +575,16 @@ function ConnectionCard({
               {syncErrorMessage(connection.errorCode)}
             </p>
           )}
+          {needsReconnect ? (
+            <div className="reconnectPanel">
+              <strong>Reconnect path</strong>
+              <p>
+                This connection cannot use normal Sync now until Plaid access is
+                restored. For now, remove this institution and connect it again
+                with Plaid Sandbox.
+              </p>
+            </div>
+          ) : null}
           {connection.latestSyncJob === null ? null : (
             <div
               className={`syncJobPanel syncJobPanel-${connection.latestSyncJob.status}`}
@@ -580,6 +605,7 @@ function ConnectionCard({
             className="secondaryButton"
             disabled={
               working ||
+              needsReconnect ||
               connection.latestSyncJob?.status === 'queued' ||
               connection.latestSyncJob?.status === 'running'
             }
@@ -598,7 +624,7 @@ function ConnectionCard({
             onClick={() => disconnect(connection.id)}
             type="button"
           >
-            Disconnect
+            {needsReconnect ? 'Remove connection' : 'Disconnect'}
           </button>
         </div>
       </div>

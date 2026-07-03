@@ -57,6 +57,15 @@ export async function POST(
         { status: 404 },
       )
     }
+    if (connection.status === 'attention_required') {
+      return NextResponse.json(
+        {
+          error: 'connection-attention-required',
+          code: connection.errorCode ?? 'ITEM_LOGIN_REQUIRED',
+        },
+        { status: 409 },
+      )
+    }
     const syncJobId = randomUUID()
     const idempotencyKey = `plaid-sync:${connectionId}:${syncJobId}`
     const queued = await repositories.syncJobs.createQueuedManualSyncJob({

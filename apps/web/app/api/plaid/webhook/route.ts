@@ -11,6 +11,23 @@ export const dynamic = 'force-dynamic'
 
 const logger = createLogger('web-plaid-webhook')
 
+function publicWebhookResponse(
+  result: Awaited<ReturnType<typeof handlePlaidWebhookPayload>>,
+) {
+  switch (result.body.status) {
+    case 'queued':
+      return { status: 'accepted' }
+    case 'enqueue_failed':
+      return { status: 'accepted' }
+    case 'ignored':
+      return { status: 'ignored', reason: result.body.reason }
+    case 'unknown_item':
+      return { status: 'ignored', reason: 'unknown_item' }
+    case 'invalid_payload':
+      return result.body
+  }
+}
+
 export async function POST(request: NextRequest) {
   let payload: unknown
   try {
@@ -39,5 +56,7 @@ export async function POST(request: NextRequest) {
     logger.info(result.body, 'Plaid webhook handled without enqueue')
   }
 
-  return NextResponse.json(result.body, { status: result.httpStatus })
+  return NextResponse.json(publicWebhookResponse(result), {
+    status: result.httpStatus,
+  })
 }

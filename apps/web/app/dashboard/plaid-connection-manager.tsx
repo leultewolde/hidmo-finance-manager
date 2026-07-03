@@ -212,12 +212,42 @@ function syncJobCompletedAt(job: SyncJobView) {
   return job.completedAt ?? job.startedAt ?? job.createdAt
 }
 
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString()
+}
+
 function formatSyncTrigger(trigger: string) {
   return trigger
     .split(/[-_.\s]+/)
     .filter(Boolean)
     .map((part) => `${part[0]?.toUpperCase() ?? ''}${part.slice(1)}`)
     .join(' ')
+}
+
+function formatSyncStatus(status: SyncJobView['status']) {
+  switch (status) {
+    case 'queued':
+      return 'Queued'
+    case 'running':
+      return 'Running'
+    case 'succeeded':
+      return 'Succeeded'
+    case 'failed':
+      return 'Failed'
+  }
+}
+
+function syncJobTimestampLabel(job: SyncJobView) {
+  switch (job.status) {
+    case 'queued':
+      return `Queued ${formatDateTime(job.createdAt)}`
+    case 'running':
+      return `Started ${formatDateTime(job.startedAt ?? job.createdAt)}`
+    case 'succeeded':
+      return `Completed ${formatDateTime(job.completedAt ?? job.createdAt)}`
+    case 'failed':
+      return `Failed ${formatDateTime(job.completedAt ?? job.createdAt)}`
+  }
 }
 
 function syncResultSummary(job: SyncJobView) {
@@ -227,13 +257,16 @@ function syncResultSummary(job: SyncJobView) {
     return syncErrorMessage(job.lastErrorCode ?? undefined)
   }
 
-  return `${numberResult(job.result, 'added')} added · ${numberResult(
-    job.result,
-    'modified',
-  )} updated · ${numberResult(job.result, 'removed')} removed · ${numberResult(
-    job.result,
-    'classified',
-  )} classified`
+  const added = numberResult(job.result, 'added')
+  const modified = numberResult(job.result, 'modified')
+  const removed = numberResult(job.result, 'removed')
+  const classified = numberResult(job.result, 'classified')
+
+  if (added === 0 && modified === 0 && removed === 0 && classified === 0) {
+    return 'No transaction changes'
+  }
+
+  return `${added} added · ${modified} updated · ${removed} removed · ${classified} classified`
 }
 
 function syncJobMessage(connection: ConnectionView) {
@@ -242,15 +275,13 @@ function syncJobMessage(connection: ConnectionView) {
 
   switch (job.status) {
     case 'queued':
-      return `Sync queued ${new Date(job.createdAt).toLocaleString()}. Refresh shortly to see progress.`
+      return `Sync queued ${formatDateTime(job.createdAt)}. Refresh shortly to see progress.`
     case 'running':
-      return `Sync running since ${new Date(
-        job.startedAt ?? job.createdAt,
-      ).toLocaleString()}.`
+      return `Sync running since ${formatDateTime(job.startedAt ?? job.createdAt)}.`
     case 'succeeded':
-      return `Latest sync completed ${new Date(
+      return `Latest sync completed ${formatDateTime(
         job.completedAt ?? job.createdAt,
-      ).toLocaleString()} · ${numberResult(job.result, 'added')} added, ${numberResult(
+      )} · ${numberResult(job.result, 'added')} added, ${numberResult(
         job.result,
         'modified',
       )} updated, ${numberResult(job.result, 'removed')} removed, ${numberResult(
@@ -260,10 +291,29 @@ function syncJobMessage(connection: ConnectionView) {
     case 'failed':
       return `${syncErrorMessage(
         job.lastErrorCode ?? undefined,
-      )} Last attempt failed ${new Date(
+      )} Last attempt failed ${formatDateTime(
         job.completedAt ?? job.createdAt,
-      ).toLocaleString()}.`
+      )}.`
   }
+}
+
+function syncJobDetails(job: SyncJobView) {
+  const details = [
+    `${formatSyncTrigger(job.trigger)} trigger`,
+    syncJobTimestampLabel(job),
+  ]
+
+  if (job.cloudTaskName !== null) {
+    details.push(
+      `Task ${job.cloudTaskName.split('/').at(-1) ?? job.cloudTaskName}`,
+    )
+  }
+
+  if (job.status === 'failed' && job.lastErrorCode !== null) {
+    details.push(`Error ${job.lastErrorCode}`)
+  }
+
+  return details
 }
 
 function disconnectErrorMessage(code: string | undefined) {
@@ -511,11 +561,18 @@ function ConnectionCard({
             </p>
           )}
           {connection.latestSyncJob === null ? null : (
-            <p
-              className={`syncJobText syncJobText-${connection.latestSyncJob.status}`}
+            <div
+              className={`syncJobPanel syncJobPanel-${connection.latestSyncJob.status}`}
             >
-              {syncJobMessage(connection)}
-            </p>
+              <div className="syncJobPanelHeader">
+                <strong>Sync status</strong>
+                <span>{formatSyncStatus(connection.latestSyncJob.status)}</span>
+              </div>
+              <p>{syncJobMessage(connection)}</p>
+              <p className="syncJobMetadata">
+                {syncJobDetails(connection.latestSyncJob).join(' · ')}
+              </p>
+            </div>
           )}
         </div>
         <div className="connectionActions">
@@ -572,11 +629,10 @@ function ConnectionCard({
               <li key={job.id}>
                 <div>
                   <strong>
-                    {formatSyncTrigger(job.trigger)} · {job.status}
+                    {formatSyncTrigger(job.trigger)} ·{' '}
+                    {formatSyncStatus(job.status)}
                   </strong>
-                  <span>
-                    {new Date(syncJobCompletedAt(job)).toLocaleString()}
-                  </span>
+                  <span>{formatDateTime(syncJobCompletedAt(job))}</span>
                 </div>
                 <span
                   className={`syncHistoryResult syncHistoryResult-${job.status}`}

@@ -328,22 +328,69 @@ li {
   color: #ff9e8f;
 }
 
-.syncJobText {
+.syncJobPanel {
+  display: grid;
+  gap: 8px;
   margin-top: 10px;
   max-width: 52rem;
+  padding: 12px 14px;
+  border: 1px solid;
+  border-radius: 12px;
+  background: rgb(0 0 0 / 12%);
 }
 
-.syncJobText-queued,
-.syncJobText-running {
-  color: #f2cf76 !important;
+.syncJobPanel p {
+  margin: 0;
 }
 
-.syncJobText-succeeded {
-  color: #a6ce78 !important;
+.syncJobPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-.syncJobText-failed {
-  color: #ff9e8f !important;
+.syncJobPanelHeader strong {
+  color: #f6f3eb;
+  font-size: 0.92rem;
+}
+
+.syncJobPanelHeader span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.syncJobMetadata {
+  color: #8d9789 !important;
+  font-size: 0.82rem;
+}
+
+.syncJobPanel-queued,
+.syncJobPanel-running {
+  border-color: rgb(242 207 118 / 34%);
+}
+
+.syncJobPanel-queued .syncJobPanelHeader span,
+.syncJobPanel-running .syncJobPanelHeader span {
+  color: #f2cf76;
+}
+
+.syncJobPanel-succeeded {
+  border-color: rgb(166 206 120 / 34%);
+}
+
+.syncJobPanel-succeeded .syncJobPanelHeader span {
+  color: #a6ce78;
+}
+
+.syncJobPanel-failed {
+  border-color: rgb(255 158 143 / 34%);
+}
+
+.syncJobPanel-failed .syncJobPanelHeader span {
+  color: #ff9e8f;
 }
 
 .accountList {

@@ -26,6 +26,8 @@ import { assertTransactionSplits } from '@hidmo/finance-engine'
 import type { Database } from './client.js'
 import {
   accounts,
+  analysisJobs,
+  analysisSnapshots,
   auditEvents,
   budgetLines,
   budgets,
@@ -42,6 +44,8 @@ import {
   transactions,
   users,
 } from './schema.js'
+
+type JsonObject = Record<string, unknown>
 
 function toDebtKind(kind: AccountKind): Debt['kind'] {
   switch (kind) {
@@ -1058,6 +1062,240 @@ export class AnalysisInputRepository {
   }
 }
 
+export class AnalysisSnapshotRepository {
+  constructor(private readonly db: Database) {}
+
+  async createDraft(input: {
+    id: string
+    userId: string
+    period: DatePeriod
+    inputHash: string
+    formulaVersion: string
+    deterministicSummary: JsonObject
+  }) {
+    const [snapshot] = await this.db
+      .insert(analysisSnapshots)
+      .values({
+        id: input.id,
+        userId: input.userId,
+        periodStart: input.period.startDate,
+        periodEnd: input.period.endDate,
+        inputHash: input.inputHash,
+        formulaVersion: input.formulaVersion,
+        deterministicSummary: input.deterministicSummary,
+        narrative: null,
+        status: 'draft',
+        completedAt: null,
+        lastErrorCode: null,
+      })
+      .onConflictDoUpdate({
+        target: [
+          analysisSnapshots.userId,
+          analysisSnapshots.periodStart,
+          analysisSnapshots.periodEnd,
+          analysisSnapshots.inputHash,
+          analysisSnapshots.formulaVersion,
+        ],
+        set: {
+          deterministicSummary: input.deterministicSummary,
+          narrative: null,
+          status: 'draft',
+          completedAt: null,
+          lastErrorCode: null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning()
+
+    return snapshot
+  }
+
+  async markComplete(snapshotId: string, narrative: JsonObject) {
+    const [snapshot] = await this.db
+      .update(analysisSnapshots)
+      .set({
+        narrative,
+        status: 'complete',
+        completedAt: new Date(),
+        lastErrorCode: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(analysisSnapshots.id, snapshotId))
+      .returning()
+
+    if (snapshot === undefined) {
+      throw new Error('Analysis snapshot not found')
+    }
+
+    return snapshot
+  }
+
+  async markFailed(snapshotId: string, errorCode: string) {
+    const [snapshot] = await this.db
+      .update(analysisSnapshots)
+      .set({
+        status: 'failed',
+        completedAt: new Date(),
+        lastErrorCode: errorCode,
+        updatedAt: new Date(),
+      })
+      .where(eq(analysisSnapshots.id, snapshotId))
+      .returning()
+
+    if (snapshot === undefined) {
+      throw new Error('Analysis snapshot not found')
+    }
+
+    return snapshot
+  }
+
+  async getLatestForUserPeriod(userId: string, period: DatePeriod) {
+    const [snapshot] = await this.db
+      .select()
+      .from(analysisSnapshots)
+      .where(
+        and(
+          eq(analysisSnapshots.userId, userId),
+          eq(analysisSnapshots.periodStart, period.startDate),
+          eq(analysisSnapshots.periodEnd, period.endDate),
+        ),
+      )
+      .orderBy(desc(analysisSnapshots.createdAt), desc(analysisSnapshots.id))
+      .limit(1)
+
+    return snapshot
+  }
+
+  async listRecentForUser(userId: string, limit = 10) {
+    return this.db
+      .select()
+      .from(analysisSnapshots)
+      .where(eq(analysisSnapshots.userId, userId))
+      .orderBy(desc(analysisSnapshots.createdAt), desc(analysisSnapshots.id))
+      .limit(limit)
+  }
+}
+
+export class AnalysisJobRepository {
+  constructor(private readonly db: Database) {}
+
+  async createQueued(input: {
+    id: string
+    userId: string
+    snapshotId?: string
+    period: DatePeriod
+    inputHash: string
+    formulaVersion: string
+  }) {
+    const [job] = await this.db
+      .insert(analysisJobs)
+      .values({
+        id: input.id,
+        userId: input.userId,
+        snapshotId: input.snapshotId,
+        periodStart: input.period.startDate,
+        periodEnd: input.period.endDate,
+        inputHash: input.inputHash,
+        formulaVersion: input.formulaVersion,
+        status: 'queued',
+      })
+      .onConflictDoUpdate({
+        target: [
+          analysisJobs.userId,
+          analysisJobs.periodStart,
+          analysisJobs.periodEnd,
+          analysisJobs.inputHash,
+          analysisJobs.formulaVersion,
+        ],
+        set: {
+          snapshotId: input.snapshotId,
+          status: 'queued',
+          startedAt: null,
+          completedAt: null,
+          lastErrorCode: null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning()
+
+    return job
+  }
+
+  async markRunning(jobId: string) {
+    const [job] = await this.db
+      .update(analysisJobs)
+      .set({
+        status: 'running',
+        startedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(analysisJobs.id, jobId))
+      .returning()
+
+    if (job === undefined) {
+      throw new Error('Analysis job not found')
+    }
+
+    return job
+  }
+
+  async markSucceeded(jobId: string, snapshotId: string) {
+    const [job] = await this.db
+      .update(analysisJobs)
+      .set({
+        snapshotId,
+        status: 'succeeded',
+        completedAt: new Date(),
+        lastErrorCode: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(analysisJobs.id, jobId))
+      .returning()
+
+    if (job === undefined) {
+      throw new Error('Analysis job not found')
+    }
+
+    return job
+  }
+
+  async markFailed(jobId: string, errorCode: string) {
+    const [job] = await this.db
+      .update(analysisJobs)
+      .set({
+        status: 'failed',
+        completedAt: new Date(),
+        lastErrorCode: errorCode,
+        updatedAt: new Date(),
+      })
+      .where(eq(analysisJobs.id, jobId))
+      .returning()
+
+    if (job === undefined) {
+      throw new Error('Analysis job not found')
+    }
+
+    return job
+  }
+
+  async getLatestForUserPeriod(userId: string, period: DatePeriod) {
+    const [job] = await this.db
+      .select()
+      .from(analysisJobs)
+      .where(
+        and(
+          eq(analysisJobs.userId, userId),
+          eq(analysisJobs.periodStart, period.startDate),
+          eq(analysisJobs.periodEnd, period.endDate),
+        ),
+      )
+      .orderBy(desc(analysisJobs.createdAt), desc(analysisJobs.id))
+      .limit(1)
+
+    return job
+  }
+}
+
 export class TransferRepository {
   constructor(private readonly db: Database) {}
 
@@ -1763,6 +2001,8 @@ export function createRepositories(db: Database) {
     liabilities: new LiabilityRepository(db),
     budgets: new BudgetRepository(db),
     analysisInputs: new AnalysisInputRepository(db),
+    analysisSnapshots: new AnalysisSnapshotRepository(db),
+    analysisJobs: new AnalysisJobRepository(db),
     metrics: new MetricRepository(db),
     recommendations: new RecommendationRepository(db),
     taskExecutions: new TaskExecutionRepository(db),

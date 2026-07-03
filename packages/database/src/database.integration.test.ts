@@ -59,6 +59,8 @@ describe('database migrations and synthetic seed', () => {
 
     expect(result.rows.map((row) => row.table_name)).toEqual([
       'accounts',
+      'analysis_jobs',
+      'analysis_snapshots',
       'audit_events',
       'budget_lines',
       'budgets',
@@ -194,6 +196,146 @@ describe('database migrations and synthetic seed', () => {
       'manual-balances-present',
       'investment-balances-included',
     ])
+  })
+
+  it('tracks analysis snapshot and job lifecycle', async () => {
+    const period = { startDate: '2026-06-01', endDate: '2026-06-30' }
+    const snapshotId = randomUUID()
+    const jobId = randomUUID()
+    const deterministicSummary = {
+      formulaVersion: 'financial-analysis-summary/v1',
+      cashFlow: { freeCashFlowMinor: '253500' },
+    }
+
+    const snapshot = await repositories.analysisSnapshots.createDraft({
+      id: snapshotId,
+      userId: syntheticIds.user,
+      period,
+      inputHash: 'analysis-input-hash',
+      formulaVersion: 'financial-analysis-summary/v1',
+      deterministicSummary,
+    })
+
+    expect(snapshot).toMatchObject({
+      id: snapshotId,
+      userId: syntheticIds.user,
+      periodStart: period.startDate,
+      periodEnd: period.endDate,
+      inputHash: 'analysis-input-hash',
+      formulaVersion: 'financial-analysis-summary/v1',
+      status: 'draft',
+      narrative: null,
+      lastErrorCode: null,
+    })
+    expect(snapshot?.deterministicSummary).toMatchObject(deterministicSummary)
+
+    const job = await repositories.analysisJobs.createQueued({
+      id: jobId,
+      userId: syntheticIds.user,
+      snapshotId,
+      period,
+      inputHash: 'analysis-input-hash',
+      formulaVersion: 'financial-analysis-summary/v1',
+    })
+
+    expect(job).toMatchObject({
+      id: jobId,
+      userId: syntheticIds.user,
+      snapshotId,
+      status: 'queued',
+    })
+
+    await repositories.analysisJobs.markRunning(jobId)
+    const completedSnapshot = await repositories.analysisSnapshots.markComplete(
+      snapshotId,
+      {
+        currentStanding: 'Stable',
+        recommendedActions: [],
+      },
+    )
+    const completedJob = await repositories.analysisJobs.markSucceeded(
+      jobId,
+      snapshotId,
+    )
+
+    expect(completedSnapshot).toMatchObject({
+      status: 'complete',
+      lastErrorCode: null,
+    })
+    expect(completedSnapshot.completedAt).toBeInstanceOf(Date)
+    expect(completedJob).toMatchObject({
+      status: 'succeeded',
+      snapshotId,
+      lastErrorCode: null,
+    })
+    expect(completedJob.startedAt).toBeInstanceOf(Date)
+    expect(completedJob.completedAt).toBeInstanceOf(Date)
+
+    await expect(
+      repositories.analysisSnapshots.getLatestForUserPeriod(
+        syntheticIds.user,
+        period,
+      ),
+    ).resolves.toMatchObject({ id: snapshotId })
+    await expect(
+      repositories.analysisJobs.getLatestForUserPeriod(
+        syntheticIds.user,
+        period,
+      ),
+    ).resolves.toMatchObject({ id: jobId })
+    await expect(
+      repositories.analysisSnapshots.listRecentForUser(syntheticIds.user, 1),
+    ).resolves.toHaveLength(1)
+  })
+
+  it('deduplicates analysis snapshots and jobs by period and input hash', async () => {
+    const period = { startDate: '2026-05-01', endDate: '2026-05-31' }
+    const firstSnapshot = await repositories.analysisSnapshots.createDraft({
+      id: randomUUID(),
+      userId: syntheticIds.user,
+      period,
+      inputHash: 'dedupe-hash',
+      formulaVersion: 'financial-analysis-summary/v1',
+      deterministicSummary: { version: 1 },
+    })
+    const secondSnapshot = await repositories.analysisSnapshots.createDraft({
+      id: randomUUID(),
+      userId: syntheticIds.user,
+      period,
+      inputHash: 'dedupe-hash',
+      formulaVersion: 'financial-analysis-summary/v1',
+      deterministicSummary: { version: 2 },
+    })
+
+    expect(secondSnapshot?.id).toBe(firstSnapshot?.id)
+    expect(secondSnapshot?.deterministicSummary).toMatchObject({ version: 2 })
+    expect(firstSnapshot).toBeDefined()
+
+    const firstJob = await repositories.analysisJobs.createQueued({
+      id: randomUUID(),
+      userId: syntheticIds.user,
+      snapshotId: firstSnapshot!.id,
+      period,
+      inputHash: 'dedupe-hash',
+      formulaVersion: 'financial-analysis-summary/v1',
+    })
+    expect(firstJob).toBeDefined()
+    await repositories.analysisJobs.markFailed(firstJob!.id, 'AI_FAILED')
+    const secondJob = await repositories.analysisJobs.createQueued({
+      id: randomUUID(),
+      userId: syntheticIds.user,
+      snapshotId: firstSnapshot!.id,
+      period,
+      inputHash: 'dedupe-hash',
+      formulaVersion: 'financial-analysis-summary/v1',
+    })
+
+    expect(secondJob?.id).toBe(firstJob?.id)
+    expect(secondJob).toMatchObject({
+      status: 'queued',
+      lastErrorCode: null,
+      completedAt: null,
+    })
   })
 })
 

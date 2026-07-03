@@ -581,6 +581,41 @@ describe('database constraints and transactions', () => {
     })
   })
 
+  it('coalesces webhook sync creation when a manual sync is active', async () => {
+    const connectionId = randomUUID()
+    await db.insert(connections).values({
+      id: connectionId,
+      userId: syntheticIds.user,
+      plaidItemId: `manual-webhook-active-${randomUUID()}`,
+    })
+
+    const manualJobId = randomUUID()
+    const manual = await repositories.syncJobs.createQueuedManualSyncJob({
+      id: manualJobId,
+      userId: syntheticIds.user,
+      connectionId,
+      idempotencyKey: `plaid-sync:${connectionId}:${manualJobId}`,
+      noOpCooldownSince: new Date(Date.now() - 60_000),
+    })
+    expect(manual).toMatchObject({
+      status: 'created',
+      job: { id: manualJobId },
+    })
+
+    const webhook = await repositories.syncJobs.createQueuedWebhookSyncJob({
+      id: randomUUID(),
+      userId: syntheticIds.user,
+      connectionId,
+      idempotencyKey: `plaid-webhook:${randomUUID()}`,
+      noOpCooldownSince: new Date(Date.now() - 60_000),
+    })
+    expect(webhook).toMatchObject({
+      status: 'coalesced',
+      reason: 'sync_already_active',
+      job: { id: manualJobId },
+    })
+  })
+
   it('coalesces manual sync job creation after a recent no-op sync', async () => {
     const connectionId = randomUUID()
     await db.insert(connections).values({

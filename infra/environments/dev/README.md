@@ -702,6 +702,69 @@ After a successful deployment, the workflow records the deployed image values in
 variables current prevents future Terraform Plan workflow runs from proposing a
 rollback.
 
+## Stage I: operational sync alerts
+
+Terraform creates log-based metrics and Cloud Monitoring alert policies for
+the main async-sync failure paths:
+
+- `worker_plaid_sync_task_failures`: Plaid sync task reached the worker but
+  failed.
+- `worker_cloud_tasks_smoke_failures`: deploy smoke task reached the worker
+  but failed.
+- `web_cloud_tasks_enqueue_failures`: the web service failed while enqueueing
+  a Cloud Task.
+
+These alerts are intentionally based on application logs because those logs
+capture the failure at the point where the app can name the operation. They are
+useful for development because they catch:
+
+- Plaid sync worker regressions;
+- Cloud Tasks authentication or payload issues;
+- queue enqueue failures from the web service;
+- Cloud Tasks smoke-test failures after deployment.
+
+By default, `alert_notification_channels = []`, so alert policies are visible
+in Cloud Monitoring but do not send email/SMS/pager notifications. This keeps
+the first apply simple and avoids requiring console-managed notification
+channel IDs.
+
+To add notifications later:
+
+1. Create a notification channel in:
+
+   Google Cloud Console
+   → Monitoring
+   → Alerting
+   → Notification channels
+
+2. Copy the channel resource name. It looks like:
+
+   ```text
+   projects/577016691583/notificationChannels/1234567890123456789
+   ```
+
+3. Add it to your local `terraform.tfvars`:
+
+   ```hcl
+   alert_notification_channels = [
+     "projects/577016691583/notificationChannels/1234567890123456789",
+   ]
+   ```
+
+4. Run:
+
+   ```bash
+   terraform plan -out=monitoring-notifications.tfplan
+   terraform show monitoring-notifications.tfplan
+   terraform apply monitoring-notifications.tfplan
+   ```
+
+After applying the alert resources, list their Terraform outputs:
+
+```bash
+terraform output monitoring_alert_policy_names
+```
+
 ## Important notes
 
 - Do not put secret values in `terraform.tfvars`.

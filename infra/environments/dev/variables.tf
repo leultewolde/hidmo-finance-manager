@@ -65,6 +65,12 @@ variable "budget_thresholds" {
   default     = [0.5, 0.9, 1.0]
 }
 
+variable "alert_notification_channels" {
+  type        = list(string)
+  description = "Cloud Monitoring notification channel resource names used by operational alert policies. Leave empty to create console-visible alerts without notifications."
+  default     = []
+}
+
 variable "web_image" {
   type        = string
   description = "Immutable container image for the web Cloud Run service."

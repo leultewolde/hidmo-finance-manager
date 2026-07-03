@@ -49,3 +49,7 @@ output "kms_key_name" {
 output "secret_names" {
   value = try(module.secrets[0].secret_names, {})
 }
+
+output "monitoring_alert_policy_names" {
+  value = try(module.monitoring[0].alert_policy_names, {})
+}

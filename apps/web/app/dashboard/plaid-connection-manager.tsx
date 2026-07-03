@@ -19,6 +19,12 @@ type SyncJobView = {
   completedAt: string | null
 }
 
+type ConnectionHealthView = {
+  accountCount: number
+  transactionCount: number
+  latestTransactionDate: string | null
+}
+
 export interface ConnectionView {
   id: string
   institutionName: string
@@ -27,6 +33,7 @@ export interface ConnectionView {
   errorCode: string | null
   reconnectRequiredAt: string | null
   createdAt: string
+  health: ConnectionHealthView
   latestSyncJob: SyncJobView | null
   recentSyncJobs: SyncJobView[]
   accounts: {
@@ -58,6 +65,10 @@ function formatMoney(amountMinor: string, currency: string) {
   }).format(Number(amountMinor) / 100)
 }
 
+function pluralize(count: number, singular: string, plural = `${singular}s`) {
+  return `${count.toLocaleString()} ${count === 1 ? singular : plural}`
+}
+
 function syncErrorMessage(code: string | undefined) {
   switch (code) {
     case 'PRODUCT_NOT_READY':
@@ -76,6 +87,116 @@ function syncErrorMessage(code: string | undefined) {
       return code === undefined
         ? 'Transactions could not be synchronized.'
         : `Transactions could not be synchronized. Plaid error: ${code}.`
+  }
+}
+
+function daysSince(value: string | null) {
+  if (value === null) return null
+  return Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000)
+}
+
+function connectionHealth(connection: ConnectionView): {
+  status: 'healthy' | 'syncing' | 'warning' | 'error'
+  title: string
+  details: string[]
+} {
+  const latestJob = connection.latestSyncJob
+  const syncAgeDays = daysSince(connection.lastSuccessfulSyncAt)
+  const details = [
+    pluralize(connection.health.accountCount, 'active account'),
+    pluralize(connection.health.transactionCount, 'transaction'),
+  ]
+
+  if (connection.health.latestTransactionDate !== null) {
+    details.push(
+      `Latest transaction ${connection.health.latestTransactionDate}`,
+    )
+  }
+
+  if (connection.lastSuccessfulSyncAt !== null) {
+    details.push(
+      `Last successful sync ${new Date(
+        connection.lastSuccessfulSyncAt,
+      ).toLocaleString()}`,
+    )
+  }
+
+  if (connection.reconnectRequiredAt !== null) {
+    return {
+      status: 'error',
+      title: 'Reconnect required',
+      details: [
+        ...details,
+        `Reconnect requested ${new Date(
+          connection.reconnectRequiredAt,
+        ).toLocaleString()}`,
+      ],
+    }
+  }
+
+  if (connection.errorCode !== null) {
+    return {
+      status: 'error',
+      title: 'Connection error',
+      details: [...details, syncErrorMessage(connection.errorCode)],
+    }
+  }
+
+  if (latestJob?.status === 'failed') {
+    return {
+      status: 'error',
+      title: 'Latest sync failed',
+      details: [
+        ...details,
+        syncErrorMessage(latestJob.lastErrorCode ?? undefined),
+      ],
+    }
+  }
+
+  if (latestJob?.status === 'queued' || latestJob?.status === 'running') {
+    return {
+      status: 'syncing',
+      title: latestJob.status === 'queued' ? 'Sync queued' : 'Sync running',
+      details,
+    }
+  }
+
+  if (connection.lastSuccessfulSyncAt === null) {
+    return {
+      status: 'warning',
+      title: 'No successful sync yet',
+      details,
+    }
+  }
+
+  if (syncAgeDays !== null && syncAgeDays >= 2) {
+    return {
+      status: 'warning',
+      title: `Data may be stale (${syncAgeDays} days)`,
+      details,
+    }
+  }
+
+  if (connection.health.accountCount === 0) {
+    return {
+      status: 'warning',
+      title: 'No active accounts',
+      details,
+    }
+  }
+
+  if (connection.health.transactionCount === 0) {
+    return {
+      status: 'warning',
+      title: 'No transactions synchronized',
+      details,
+    }
+  }
+
+  return {
+    status: 'healthy',
+    title: 'Data current',
+    details,
   }
 }
 
@@ -326,114 +447,136 @@ export function PlaidConnectionManager({
       ) : (
         <div className="connectionGrid">
           {initialConnections.map((connection) => (
-            <article className="connectionCard" key={connection.id}>
-              <div className="connectionCardHeader">
-                <div>
-                  <h3>{connection.institutionName}</h3>
-                  <p>
-                    Connected{' '}
-                    {new Date(connection.createdAt).toLocaleDateString()}
-                  </p>
-                  <p>
-                    {connection.lastSuccessfulSyncAt === null
-                      ? 'Transactions not synchronized yet'
-                      : `Last synced ${new Date(
-                          connection.lastSuccessfulSyncAt,
-                        ).toLocaleString()}`}
-                  </p>
-                  {connection.reconnectRequiredAt === null ? null : (
-                    <p className="attentionText">Reconnect required</p>
-                  )}
-                  {connection.errorCode === null ? null : (
-                    <p className="attentionText">
-                      {syncErrorMessage(connection.errorCode)}
-                    </p>
-                  )}
-                  {connection.latestSyncJob === null ? null : (
-                    <p
-                      className={`syncJobText syncJobText-${connection.latestSyncJob.status}`}
-                    >
-                      {syncJobMessage(connection)}
-                    </p>
-                  )}
-                </div>
-                <div className="connectionActions">
-                  <button
-                    className="secondaryButton"
-                    disabled={
-                      working ||
-                      connection.latestSyncJob?.status === 'queued' ||
-                      connection.latestSyncJob?.status === 'running'
-                    }
-                    onClick={() => sync(connection.id)}
-                    type="button"
-                  >
-                    {connection.latestSyncJob?.status === 'queued'
-                      ? 'Sync queued'
-                      : connection.latestSyncJob?.status === 'running'
-                        ? 'Sync running'
-                        : 'Sync now'}
-                  </button>
-                  <button
-                    className="textButton"
-                    disabled={working}
-                    onClick={() => disconnect(connection.id)}
-                    type="button"
-                  >
-                    Disconnect
-                  </button>
-                </div>
-              </div>
-              <ul className="accountList">
-                {connection.accounts.map((account) => (
-                  <li key={account.id}>
-                    <div>
-                      <strong>{account.name}</strong>
-                      <span>
-                        {account.kind.replaceAll('_', ' ')}
-                        {account.mask === null ? '' : ` •••• ${account.mask}`}
-                      </span>
-                    </div>
-                    <strong>
-                      {formatMoney(
-                        account.currentBalanceMinor,
-                        account.currency,
-                      )}
-                    </strong>
-                  </li>
-                ))}
-              </ul>
-              {connection.recentSyncJobs.length === 0 ? null : (
-                <details className="syncHistory">
-                  <summary>
-                    Recent syncs
-                    <span>{connection.recentSyncJobs.length} shown</span>
-                  </summary>
-                  <ul>
-                    {connection.recentSyncJobs.map((job) => (
-                      <li key={job.id}>
-                        <div>
-                          <strong>
-                            {formatSyncTrigger(job.trigger)} · {job.status}
-                          </strong>
-                          <span>
-                            {new Date(syncJobCompletedAt(job)).toLocaleString()}
-                          </span>
-                        </div>
-                        <span
-                          className={`syncHistoryResult syncHistoryResult-${job.status}`}
-                        >
-                          {syncResultSummary(job)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
-            </article>
+            <ConnectionCard
+              connection={connection}
+              disconnect={disconnect}
+              key={connection.id}
+              sync={sync}
+              working={working}
+            />
           ))}
         </div>
       )}
     </section>
+  )
+}
+
+function ConnectionCard({
+  connection,
+  disconnect,
+  sync,
+  working,
+}: {
+  connection: ConnectionView
+  disconnect(connectionId: string): void
+  sync(connectionId: string): void
+  working: boolean
+}) {
+  const health = connectionHealth(connection)
+
+  return (
+    <article className="connectionCard">
+      <div className="connectionCardHeader">
+        <div>
+          <h3>{connection.institutionName}</h3>
+          <p>Connected {new Date(connection.createdAt).toLocaleDateString()}</p>
+          <p>
+            {connection.lastSuccessfulSyncAt === null
+              ? 'Transactions not synchronized yet'
+              : `Last synced ${new Date(
+                  connection.lastSuccessfulSyncAt,
+                ).toLocaleString()}`}
+          </p>
+          <div className={`connectionHealth connectionHealth-${health.status}`}>
+            <strong>{health.title}</strong>
+            <span>{health.details.join(' · ')}</span>
+          </div>
+          {connection.reconnectRequiredAt === null ? null : (
+            <p className="attentionText">Reconnect required</p>
+          )}
+          {connection.errorCode === null ? null : (
+            <p className="attentionText">
+              {syncErrorMessage(connection.errorCode)}
+            </p>
+          )}
+          {connection.latestSyncJob === null ? null : (
+            <p
+              className={`syncJobText syncJobText-${connection.latestSyncJob.status}`}
+            >
+              {syncJobMessage(connection)}
+            </p>
+          )}
+        </div>
+        <div className="connectionActions">
+          <button
+            className="secondaryButton"
+            disabled={
+              working ||
+              connection.latestSyncJob?.status === 'queued' ||
+              connection.latestSyncJob?.status === 'running'
+            }
+            onClick={() => sync(connection.id)}
+            type="button"
+          >
+            {connection.latestSyncJob?.status === 'queued'
+              ? 'Sync queued'
+              : connection.latestSyncJob?.status === 'running'
+                ? 'Sync running'
+                : 'Sync now'}
+          </button>
+          <button
+            className="textButton"
+            disabled={working}
+            onClick={() => disconnect(connection.id)}
+            type="button"
+          >
+            Disconnect
+          </button>
+        </div>
+      </div>
+      <ul className="accountList">
+        {connection.accounts.map((account) => (
+          <li key={account.id}>
+            <div>
+              <strong>{account.name}</strong>
+              <span>
+                {account.kind.replaceAll('_', ' ')}
+                {account.mask === null ? '' : ` •••• ${account.mask}`}
+              </span>
+            </div>
+            <strong>
+              {formatMoney(account.currentBalanceMinor, account.currency)}
+            </strong>
+          </li>
+        ))}
+      </ul>
+      {connection.recentSyncJobs.length === 0 ? null : (
+        <details className="syncHistory">
+          <summary>
+            Recent syncs
+            <span>{connection.recentSyncJobs.length} shown</span>
+          </summary>
+          <ul>
+            {connection.recentSyncJobs.map((job) => (
+              <li key={job.id}>
+                <div>
+                  <strong>
+                    {formatSyncTrigger(job.trigger)} · {job.status}
+                  </strong>
+                  <span>
+                    {new Date(syncJobCompletedAt(job)).toLocaleString()}
+                  </span>
+                </div>
+                <span
+                  className={`syncHistoryResult syncHistoryResult-${job.status}`}
+                >
+                  {syncResultSummary(job)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </article>
   )
 }

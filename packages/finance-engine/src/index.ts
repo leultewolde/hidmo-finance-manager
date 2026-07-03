@@ -1,3 +1,4 @@
+export * from './analysis.js'
 export * from './debt-payoff.js'
 export * from './domain.js'
 export * from './fixtures.js'

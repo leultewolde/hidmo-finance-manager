@@ -129,3 +129,43 @@ Plaid `/transactions/sync` supports depository, credit, and supported student
 loan accounts. Investment transactions require Plaid's Investments transaction
 endpoint and are outside this milestone. Investment account balances remain
 part of net worth.
+
+## Milestone 9 completion checklist
+
+Milestone 9 is complete when the following are verified in the deployed
+development environment:
+
+- Web requests enqueue Plaid sync work through Cloud Tasks instead of running
+  the sync inline.
+- Worker requests reject anonymous callers and accept Cloud Tasks OIDC
+  invocation.
+- Manual **Sync now** creates one queued sync job for a connection.
+- Repeated manual sync clicks coalesce when a sync is already active or a
+  recent no-op sync completed.
+- Plaid transaction webhooks enqueue the same worker sync path.
+- Duplicate webhook deliveries do not enqueue duplicate work.
+- Manual and webhook sync requests for the same connection coalesce safely.
+- The dashboard shows latest sync status, trigger source, failure code when
+  present, and recent sync history.
+- Failed syncs can be retried through the dashboard using the same manual sync
+  queue path.
+- Reconnect-required connections remain visible and provide a clear removal and
+  relink path.
+- Worker logs include operation, trigger, previous status, sync job id, and
+  transaction/classification counts.
+- Log-based alert policies exist for Plaid sync task failures, Cloud Tasks
+  smoke task failures, and web enqueue failures.
+- The development runbook explains dashboard-first troubleshooting and fallback
+  `gcloud logging read` commands.
+- The normal deploy flow can build artifacts, resolve latest `main` image
+  digests, deploy with approval, run migrations, and complete smoke tests.
+
+Deferred intentionally:
+
+- Plaid update-mode reconnect flow. Current recovery is remove and reconnect
+  the Sandbox institution.
+- Plaid webhook signature verification. The Sandbox webhook endpoint validates
+  shape, event type, known Item mapping, idempotency, and redacted responses;
+  real-data use should add Plaid's current verification flow first.
+- Investment transaction import. Investment balances count toward net worth,
+  but investment transaction history requires a separate Plaid endpoint.

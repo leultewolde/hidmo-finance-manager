@@ -210,6 +210,17 @@ locals {
       EOT
     }
 
+    worker_financial_analysis_task_failures = {
+      description         = "Counts worker financial analysis task failures."
+      filter              = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"finance-worker\" AND jsonPayload.msg=\"worker financial analysis task failed\""
+      alert_display_name  = "Finance dev worker financial analysis failures"
+      alert_documentation = <<-EOT
+        A financial analysis Cloud Task reached the worker but failed before completing the stored analysis snapshot.
+
+        Check Cloud Run logs for `finance-worker`, then inspect the latest analysis job and snapshot in the dashboard. Common causes are database connectivity, malformed task payloads, provider failures, or Vertex AI configuration when the provider is changed from `mock` to `vertex`.
+      EOT
+    }
+
     web_cloud_tasks_enqueue_failures = {
       description         = "Counts web service failures when enqueueing Cloud Tasks."
       filter              = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"finance-web\" AND (jsonPayload.msg=\"Cloud Tasks smoke task enqueue failed\" OR jsonPayload.msg=\"Plaid transaction synchronization failed\")"
@@ -218,6 +229,17 @@ locals {
         The web service failed while enqueueing a Cloud Task.
 
         Check Cloud Run logs for `finance-web`, Cloud Tasks queue permissions, the `tasks-invoker` service account, and Cloud Tasks API availability.
+      EOT
+    }
+
+    web_financial_analysis_enqueue_failures = {
+      description         = "Counts web service failures when enqueueing financial analysis tasks."
+      filter              = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"finance-web\" AND jsonPayload.msg=\"Financial analysis generation enqueue failed\""
+      alert_display_name  = "Finance dev web financial analysis enqueue failures"
+      alert_documentation = <<-EOT
+        The web service failed while queueing a financial analysis request.
+
+        Check Cloud Run logs for `finance-web`, Cloud Tasks queue permissions, the `ai-analysis` queue, the `tasks-invoker` service account, and Cloud Tasks API availability.
       EOT
     }
   }

@@ -116,3 +116,23 @@ I. Monitoring and docs
 7. Cloud Tasks worker integration: `G`.
 8. Dashboard analysis UI: `H`.
 9. Monitoring, docs, and final checklist: `I`.
+
+## Implementation status
+
+Completed:
+
+- `A`: analysis domain contracts;
+- `B`: deterministic finance summary engine;
+- `C`: database read model for analysis inputs;
+- `D`: snapshot and job persistence;
+- `E`: AI provider abstraction, mock provider, guardrails, and Vertex adapter;
+- `F`: analysis generation service;
+- `G`: Cloud Tasks worker integration;
+- `H`: dashboard analysis UI;
+- `I`: monitoring, runbook, prompt/privacy docs, and deployed validation
+  checklist.
+
+Operational documentation:
+
+- [Financial analysis runbook](./financial-analysis-runbook.md)
+- [Development GCP environment guide](../infra/environments/dev/README.md)

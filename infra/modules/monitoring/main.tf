@@ -52,6 +52,9 @@ resource "time_sleep" "log_alert_metric_propagation" {
   count = length(var.log_alert_metrics) > 0 ? 1 : 0
 
   create_duration = var.log_alert_metric_propagation_delay
+  triggers = {
+    metric_names = join(",", sort(keys(var.log_alert_metrics)))
+  }
 
   depends_on = [google_logging_metric.log_alerts]
 }

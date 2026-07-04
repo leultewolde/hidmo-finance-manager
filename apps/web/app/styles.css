@@ -522,6 +522,172 @@ li {
   border-top: 1px solid #30362d;
 }
 
+.analysisSection {
+  margin-top: 72px;
+  padding-top: 64px;
+  border-top: 1px solid #30362d;
+}
+
+.analysisHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.analysisHeader h2 {
+  margin-top: 12px;
+}
+
+.analysisHeader p:last-child {
+  max-width: 680px;
+  color: #8d9789;
+  line-height: 1.6;
+}
+
+.analysisStatusGrid,
+.analysisMetricGrid,
+.analysisNarrativeGrid {
+  display: grid;
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.analysisStatusGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.analysisMetricGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.analysisNarrativeGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.analysisStatusCard,
+.analysisMetricGrid article,
+.analysisNarrativeGrid article,
+.analysisEmpty,
+.analysisCaveats {
+  padding: 24px;
+  border: 1px solid #30362d;
+  border-radius: 16px;
+  background: rgb(255 255 255 / 2%);
+}
+
+.analysisStatusCard,
+.analysisMetricGrid article {
+  display: grid;
+  gap: 10px;
+}
+
+.analysisStatusCard span,
+.analysisMetricGrid span {
+  color: #8d9789;
+}
+
+.analysisStatusCard strong,
+.analysisMetricGrid strong {
+  font-size: 1.25rem;
+}
+
+.analysisStatusCard p,
+.analysisNarrativeGrid p,
+.analysisEmpty p,
+.analysisCaveats p {
+  margin: 0;
+  color: #adb5aa;
+  line-height: 1.65;
+}
+
+.analysisJob-queued strong,
+.analysisJob-running strong {
+  color: #f2cf76;
+}
+
+.analysisJob-succeeded strong {
+  color: #a6ce78;
+}
+
+.analysisJob-failed strong {
+  color: #ff9e8f;
+}
+
+.analysisNarrativeGrid article {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.analysisActionsCard {
+  grid-column: 1 / -1;
+}
+
+.analysisActionsCard ol {
+  display: grid;
+  gap: 12px;
+}
+
+.analysisActionsCard li {
+  display: block;
+  padding: 16px 0;
+  border-bottom: 1px solid #30362d;
+}
+
+.analysisActionsCard li:last-child {
+  border-bottom: 0;
+}
+
+.analysisActionsCard li div {
+  display: grid;
+  gap: 7px;
+}
+
+.analysisActionsCard li span {
+  color: #a6ce78;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.analysisActionsCard li p {
+  color: #adb5aa;
+}
+
+.analysisEmpty,
+.analysisCaveats {
+  margin-top: 24px;
+}
+
+.analysisEmpty strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.analysisCaveats summary {
+  color: #f6f3eb;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.analysisCaveats div {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.coverageNote-warning,
+.riskNote-warning,
+.riskNote-critical {
+  color: #f2cf76 !important;
+}
+
+.riskNote-critical {
+  color: #ff9e8f !important;
+}
+
 .classificationSummary {
   margin-top: 72px;
   padding-top: 64px;
@@ -958,11 +1124,15 @@ li {
   }
 
   .connectionsHeading,
-  .connectionCardHeader {
+  .connectionCardHeader,
+  .analysisHeader {
     flex-direction: column;
   }
 
-  .summaryGrid {
+  .summaryGrid,
+  .analysisStatusGrid,
+  .analysisMetricGrid,
+  .analysisNarrativeGrid {
     grid-template-columns: 1fr;
   }
 

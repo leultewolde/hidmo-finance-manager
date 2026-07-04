@@ -8,10 +8,152 @@ import {
   PlaidConnectionManager,
   type ConnectionView,
 } from './plaid-connection-manager'
+import { AnalysisCard, type AnalysisSnapshotView } from './analysis-card'
 import { ReviewQueue } from './review-queue'
 import { SignOutButton } from './sign-out-button'
 
 export const dynamic = 'force-dynamic'
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function stringValue(value: unknown, fallback = '0') {
+  return typeof value === 'string' ? value : fallback
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : []
+}
+
+function actionPriority(value: unknown): 'high' | 'medium' | 'low' | null {
+  return value === 'high' || value === 'medium' || value === 'low'
+    ? value
+    : null
+}
+
+function analysisNotes(
+  value: unknown,
+): { severity: 'info' | 'warning'; message: string }[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((entry) => {
+    const record = asRecord(entry)
+    if (record === null || typeof record.message !== 'string') return []
+    return [
+      {
+        severity: record.severity === 'warning' ? 'warning' : 'info',
+        message: record.message,
+      },
+    ]
+  })
+}
+
+function riskIndicators(
+  value: unknown,
+): { severity: 'info' | 'warning' | 'critical'; message: string }[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((entry) => {
+    const record = asRecord(entry)
+    if (record === null || typeof record.message !== 'string') return []
+    const severity =
+      record.severity === 'critical' || record.severity === 'warning'
+        ? record.severity
+        : 'info'
+    return [{ severity, message: record.message }]
+  })
+}
+
+function analysisNarrative(value: unknown): AnalysisSnapshotView['narrative'] {
+  const record = asRecord(value)
+  if (
+    record === null ||
+    typeof record.currentStanding !== 'string' ||
+    typeof record.budgetSummary !== 'string' ||
+    typeof record.disclaimer !== 'string'
+  ) {
+    return null
+  }
+
+  const recommendedActions = Array.isArray(record.recommendedActions)
+    ? record.recommendedActions.flatMap((entry) => {
+        const action = asRecord(entry)
+        const priority = actionPriority(action?.priority)
+        if (
+          action === null ||
+          priority === null ||
+          typeof action.title !== 'string' ||
+          typeof action.rationale !== 'string'
+        ) {
+          return []
+        }
+        return [
+          {
+            priority,
+            title: action.title,
+            rationale: action.rationale,
+          },
+        ]
+      })
+    : []
+
+  return {
+    currentStanding: record.currentStanding,
+    budgetSummary: record.budgetSummary,
+    recommendedActions,
+    caveats: stringArray(record.caveats),
+    disclaimer: record.disclaimer,
+  }
+}
+
+function analysisSummary(value: unknown): AnalysisSnapshotView['summary'] {
+  const summary = asRecord(value)
+  if (summary === null) return null
+
+  const balanceSheet = asRecord(summary.balanceSheet)
+  const cashFlow = asRecord(summary.cashFlow)
+  const debt = asRecord(summary.debt)
+  const budgetBaseline = asRecord(summary.budgetBaseline)
+  const coverage = asRecord(summary.coverage)
+  if (
+    balanceSheet === null ||
+    cashFlow === null ||
+    debt === null ||
+    budgetBaseline === null ||
+    coverage === null ||
+    typeof summary.currency !== 'string'
+  ) {
+    return null
+  }
+
+  return {
+    currency: summary.currency,
+    netWorthMinor: stringValue(balanceSheet.netWorthMinor),
+    liquidCashMinor: stringValue(balanceSheet.liquidCashMinor),
+    freeCashFlowMinor: stringValue(cashFlow.freeCashFlowMinor),
+    savingsRateBps: numberValue(cashFlow.savingsRateBps),
+    totalDebtMinor: stringValue(debt.totalDebtMinor),
+    savingsCapacityAfterMinimumDebtMinor: stringValue(
+      budgetBaseline.savingsCapacityAfterMinimumDebtMinor,
+    ),
+    emergencyFundCoverageMonthsHundredths: numberValue(
+      summary.emergencyFundCoverageMonthsHundredths,
+    ),
+    transactionsAvailable: numberValue(coverage.transactionsAvailable) ?? 0,
+    transactionsIncluded: numberValue(coverage.transactionsIncluded) ?? 0,
+    coverageNotes: analysisNotes(coverage.coverageNotes),
+    riskIndicators: riskIndicators(summary.riskIndicators),
+  }
+}
 
 export default async function DashboardPage() {
   let ownerContext
@@ -172,6 +314,25 @@ export default async function DashboardPage() {
   )
     .toISOString()
     .slice(0, 10)
+  const analysisPeriod = {
+    startDate: monthStart,
+    endDate: monthEnd,
+    label: new Intl.DateTimeFormat('en-US', {
+      month: 'long',
+      timeZone: 'UTC',
+      year: 'numeric',
+    }).format(new Date(`${monthStart}T00:00:00.000Z`)),
+  }
+  const [latestAnalysisSnapshot, latestAnalysisJob] = await Promise.all([
+    ownerContext.repositories.analysisSnapshots.getLatestForUserPeriod(
+      ownerContext.databaseOwner.id,
+      analysisPeriod,
+    ),
+    ownerContext.repositories.analysisJobs.getLatestForUserPeriod(
+      ownerContext.databaseOwner.id,
+      analysisPeriod,
+    ),
+  ])
   const usdTransactions = transactionDetails.transactions.filter(
     (transaction) => transaction.currency === 'USD',
   )
@@ -224,6 +385,43 @@ export default async function DashboardPage() {
       </section>
 
       <PlaidConnectionManager initialConnections={connections} />
+
+      <AnalysisCard
+        currentPeriod={analysisPeriod}
+        latestJob={
+          latestAnalysisJob === undefined
+            ? null
+            : {
+                id: latestAnalysisJob.id,
+                status: latestAnalysisJob.status,
+                lastErrorCode: latestAnalysisJob.lastErrorCode,
+                createdAt: latestAnalysisJob.createdAt.toISOString(),
+                startedAt: latestAnalysisJob.startedAt?.toISOString() ?? null,
+                completedAt:
+                  latestAnalysisJob.completedAt?.toISOString() ?? null,
+              }
+        }
+        latestSnapshot={
+          latestAnalysisSnapshot === undefined
+            ? null
+            : {
+                id: latestAnalysisSnapshot.id,
+                status: latestAnalysisSnapshot.status,
+                periodStart: latestAnalysisSnapshot.periodStart,
+                periodEnd: latestAnalysisSnapshot.periodEnd,
+                inputHash: latestAnalysisSnapshot.inputHash,
+                formulaVersion: latestAnalysisSnapshot.formulaVersion,
+                createdAt: latestAnalysisSnapshot.createdAt.toISOString(),
+                completedAt:
+                  latestAnalysisSnapshot.completedAt?.toISOString() ?? null,
+                lastErrorCode: latestAnalysisSnapshot.lastErrorCode,
+                narrative: analysisNarrative(latestAnalysisSnapshot.narrative),
+                summary: analysisSummary(
+                  latestAnalysisSnapshot.deterministicSummary,
+                ),
+              }
+        }
+      />
 
       <section className="classificationSummary">
         <p className="sectionLabel">Current month</p>

@@ -40,6 +40,9 @@ export type AnalysisAiProviderMetadata = {
   outputSchemaVersion: typeof financialAnalysisOutputSchemaVersion
   inputBytes: number
   outputBytes: number
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
 }
 
 export type AnalysisNarrativeResult = {

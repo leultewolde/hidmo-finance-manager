@@ -102,6 +102,12 @@ importers:
 
   apps/worker:
     dependencies:
+      '@hidmo/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
+      '@hidmo/analysis':
+        specifier: workspace:*
+        version: link:../../packages/analysis
       '@hidmo/config':
         specifier: workspace:*
         version: link:../../packages/config

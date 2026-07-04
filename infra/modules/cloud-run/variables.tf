@@ -83,6 +83,7 @@ variable "web_environment" {
 
 variable "web_cloud_tasks_environment" {
   type = object({
+    ai_analysis_queue             = string
     calculation_queue             = string
     invoker_service_account_email = string
     location                      = string

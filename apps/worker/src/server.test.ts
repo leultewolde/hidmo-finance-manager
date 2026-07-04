@@ -221,4 +221,95 @@ describe('worker health server', () => {
     expect(response.statusCode).toBe(403)
     expect(response.body).toEqual({ error: 'unexpected_task_queue' })
   })
+
+  it('runs a financial analysis task from the ai-analysis queue', async () => {
+    const financialAnalysis = vi.fn().mockResolvedValue({
+      status: 'generated',
+      snapshotId: '00000000-0000-4000-8000-000000000004',
+      jobId: '00000000-0000-4000-8000-000000000005',
+      inputHash:
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      formulaVersion: 'financial-analysis-summary/v1',
+    })
+
+    const response = await getWorkerResponse(
+      'POST',
+      '/tasks/financial-analysis',
+      {
+        allowedTaskQueues: new Set(['ai-analysis']),
+        financialAnalysis,
+        logger: createLogger('test', 'silent'),
+        pool: { query: vi.fn() } as never,
+      },
+      {
+        bodyText: JSON.stringify({
+          operation: 'financial-analysis.generate',
+          schemaVersion: 1,
+          userId: '00000000-0000-4000-8000-000000000001',
+          period: {
+            startDate: '2026-06-01',
+            endDate: '2026-06-30',
+            label: 'June 2026',
+          },
+          idempotencyKey:
+            'financial-analysis:00000000-0000-4000-8000-000000000001:2026-06-01:2026-06-30',
+        }),
+        headers: {
+          'x-cloudtasks-queuename': 'ai-analysis',
+          'x-cloudtasks-taskname': 'financial-analysis-test',
+        },
+      },
+    )
+
+    expect(response.statusCode).toBe(200)
+    expect(response.body).toMatchObject({
+      operation: 'financial-analysis.generate',
+      status: 'generated',
+      userId: '00000000-0000-4000-8000-000000000001',
+      snapshotId: '00000000-0000-4000-8000-000000000004',
+      jobId: '00000000-0000-4000-8000-000000000005',
+      formulaVersion: 'financial-analysis-summary/v1',
+    })
+    expect(financialAnalysis).toHaveBeenCalledWith({
+      userId: '00000000-0000-4000-8000-000000000001',
+      period: {
+        startDate: '2026-06-01',
+        endDate: '2026-06-30',
+        label: 'June 2026',
+      },
+    })
+  })
+
+  it('rejects financial analysis tasks from unexpected queues', async () => {
+    const response = await getWorkerResponse(
+      'POST',
+      '/tasks/financial-analysis',
+      {
+        allowedTaskQueues: new Set(['calculation']),
+        financialAnalysis: vi.fn(),
+        logger: createLogger('test', 'silent'),
+        pool: { query: vi.fn() } as never,
+      },
+      {
+        bodyText: JSON.stringify({
+          operation: 'financial-analysis.generate',
+          schemaVersion: 1,
+          userId: '00000000-0000-4000-8000-000000000001',
+          period: {
+            startDate: '2026-06-01',
+            endDate: '2026-06-30',
+          },
+          idempotencyKey:
+            'financial-analysis:00000000-0000-4000-8000-000000000001:2026-06-01:2026-06-30',
+        }),
+        headers: {
+          'x-cloudtasks-queuename': 'ai-analysis',
+          'x-cloudtasks-taskname': 'financial-analysis-test',
+        },
+      },
+    )
+
+    expect(response.statusCode).toBe(403)
+    expect(response.body).toEqual({ error: 'unexpected_task_queue' })
+  })
 })

@@ -4,12 +4,15 @@ import { randomUUID } from 'node:crypto'
 
 import {
   cloudTaskSmokePayloadSchema,
+  financialAnalysisTaskPayloadSchema,
   plaidSyncTaskPayloadSchema,
 } from '@hidmo/contracts'
+import type { AnalysisPeriodPayload } from '@hidmo/contracts'
 
 import { getWebEnvironment } from '@hidmo/config'
 
 type CloudTaskConfig = {
+  aiAnalysisQueue: string
   calculationQueue: string
   location: string
   plaidSyncQueue: string
@@ -53,6 +56,10 @@ async function getCloudRunAccessToken() {
 export function getCloudTaskConfig(): CloudTaskConfig {
   const environment = getWebEnvironment()
   const missing = [
+    [
+      'CLOUD_TASKS_AI_ANALYSIS_QUEUE',
+      environment.CLOUD_TASKS_AI_ANALYSIS_QUEUE,
+    ],
     ['CLOUD_TASKS_LOCATION', environment.CLOUD_TASKS_LOCATION],
     [
       'CLOUD_TASKS_CALCULATION_QUEUE',
@@ -75,6 +82,7 @@ export function getCloudTaskConfig(): CloudTaskConfig {
   }
 
   return {
+    aiAnalysisQueue: environment.CLOUD_TASKS_AI_ANALYSIS_QUEUE!,
     calculationQueue: environment.CLOUD_TASKS_CALCULATION_QUEUE!,
     location: environment.CLOUD_TASKS_LOCATION!,
     plaidSyncQueue: environment.CLOUD_TASKS_PLAID_SYNC_QUEUE!,
@@ -170,6 +178,32 @@ export async function enqueuePlaidSyncTask(input: {
     endpoint: '/tasks/plaid-sync',
     payload,
     queue: config.plaidSyncQueue,
+  })
+
+  return {
+    idempotencyKey: input.idempotencyKey,
+    taskName: task.name ?? '',
+  }
+}
+
+export async function enqueueFinancialAnalysisTask(input: {
+  userId: string
+  period: AnalysisPeriodPayload
+  idempotencyKey: string
+}) {
+  const config = getCloudTaskConfig()
+  const payload = financialAnalysisTaskPayloadSchema.parse({
+    operation: 'financial-analysis.generate',
+    schemaVersion: 1,
+    userId: input.userId,
+    period: input.period,
+    idempotencyKey: input.idempotencyKey,
+  })
+  const task = await createHttpTask({
+    config,
+    endpoint: '/tasks/financial-analysis',
+    payload,
+    queue: config.aiAnalysisQueue,
   })
 
   return {

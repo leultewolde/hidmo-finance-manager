@@ -476,13 +476,15 @@ module "cloud_run" {
     PLAID_WEBHOOK_URL   = "https://finance-web-wn5w6w4mva-ue.a.run.app/api/plaid/webhook"
   })
   web_cloud_tasks_environment = {
+    ai_analysis_queue             = "ai-analysis"
     calculation_queue             = "calculation"
     invoker_service_account_email = module.service_accounts.emails["tasks-invoker"]
     location                      = var.region
     plaid_sync_queue              = "plaid-sync"
   }
   worker_environment = merge(var.worker_environment, {
-    CLOUD_TASKS_ALLOWED_QUEUES = "calculation,plaid-sync"
+    AI_PROVIDER                = "mock"
+    CLOUD_TASKS_ALLOWED_QUEUES = "calculation,plaid-sync,ai-analysis"
     PLAID_ENV                  = "sandbox"
   })
   migration_environment  = var.migration_environment

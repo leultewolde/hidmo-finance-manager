@@ -1166,6 +1166,29 @@ export class AnalysisSnapshotRepository {
     return snapshot
   }
 
+  async getForInput(
+    userId: string,
+    period: DatePeriod,
+    inputHash: string,
+    formulaVersion: string,
+  ) {
+    const [snapshot] = await this.db
+      .select()
+      .from(analysisSnapshots)
+      .where(
+        and(
+          eq(analysisSnapshots.userId, userId),
+          eq(analysisSnapshots.periodStart, period.startDate),
+          eq(analysisSnapshots.periodEnd, period.endDate),
+          eq(analysisSnapshots.inputHash, inputHash),
+          eq(analysisSnapshots.formulaVersion, formulaVersion),
+        ),
+      )
+      .limit(1)
+
+    return snapshot
+  }
+
   async listRecentForUser(userId: string, limit = 10) {
     return this.db
       .select()

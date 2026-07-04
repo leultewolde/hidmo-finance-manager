@@ -143,6 +143,18 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
+  packages/analysis:
+    dependencies:
+      '@hidmo/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@hidmo/database':
+        specifier: workspace:*
+        version: link:../database
+      '@hidmo/finance-engine':
+        specifier: workspace:*
+        version: link:../finance-engine
+
   packages/classification:
     dependencies:
       '@hidmo/finance-engine':

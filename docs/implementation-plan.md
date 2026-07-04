@@ -434,6 +434,13 @@ First work driver:
 
 **Outcome:** the application provides the complete non-AI financial picture.
 
+Note: the current Milestone 10 implementation also includes the AI-assisted
+analysis work tracked in
+[the analysis implementation DAG](./analysis-implementation-dag.md). That DAG
+is the source of truth for the deployed analysis contracts, deterministic
+summary engine, Cloud Tasks execution path, dashboard analysis card, monitoring,
+and runbook.
+
 Implementation work:
 
 1. Import connected credit-card and supported liability details.

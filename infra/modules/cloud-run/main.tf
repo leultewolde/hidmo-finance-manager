@@ -82,6 +82,14 @@ resource "google_cloud_run_v2_service" "web" {
       dynamic "env" {
         for_each = var.web_cloud_tasks_environment == null ? [] : [var.web_cloud_tasks_environment]
         content {
+          name  = "CLOUD_TASKS_AI_ANALYSIS_QUEUE"
+          value = env.value.ai_analysis_queue
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.web_cloud_tasks_environment == null ? [] : [var.web_cloud_tasks_environment]
+        content {
           name  = "CLOUD_TASKS_CALCULATION_QUEUE"
           value = env.value.calculation_queue
         }

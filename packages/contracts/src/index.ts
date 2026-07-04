@@ -57,6 +57,41 @@ export const plaidSyncTaskResponseSchema = z.object({
 
 export type PlaidSyncTaskResponse = z.infer<typeof plaidSyncTaskResponseSchema>
 
+export const analysisPeriodSchema = z.object({
+  startDate: z.iso.date(),
+  endDate: z.iso.date(),
+  label: z.string().min(1).max(80).optional(),
+})
+
+export type AnalysisPeriodPayload = z.infer<typeof analysisPeriodSchema>
+
+export const financialAnalysisTaskPayloadSchema = z.object({
+  operation: z.literal('financial-analysis.generate'),
+  schemaVersion: z.literal(1),
+  userId: z.uuid(),
+  period: analysisPeriodSchema,
+  idempotencyKey: z.string().min(1).max(200),
+})
+
+export type FinancialAnalysisTaskPayload = z.infer<
+  typeof financialAnalysisTaskPayloadSchema
+>
+
+export const financialAnalysisTaskResponseSchema = z.object({
+  status: z.enum(['generated', 'reused']),
+  operation: z.literal('financial-analysis.generate'),
+  userId: z.uuid(),
+  period: analysisPeriodSchema,
+  snapshotId: z.uuid(),
+  jobId: z.uuid().optional(),
+  inputHash: z.string().regex(/^[0-9a-f]{64}$/),
+  formulaVersion: z.string().min(1),
+})
+
+export type FinancialAnalysisTaskResponse = z.infer<
+  typeof financialAnalysisTaskResponseSchema
+>
+
 export const plaidWebhookPayloadSchema = z.object({
   webhook_type: z.string().min(1),
   webhook_code: z.string().min(1),

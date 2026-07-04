@@ -8,10 +8,13 @@ import { randomUUID } from 'node:crypto'
 import {
   cloudTaskSmokePayloadSchema,
   cloudTaskSmokeResponseSchema,
+  financialAnalysisTaskPayloadSchema,
+  financialAnalysisTaskResponseSchema,
   healthResponseSchema,
   plaidSyncTaskPayloadSchema,
   plaidSyncTaskResponseSchema,
   type CloudTaskSmokeResponse,
+  type FinancialAnalysisTaskResponse,
   type HealthResponse,
   type PlaidSyncTaskResponse,
 } from '@hidmo/contracts'
@@ -22,6 +25,20 @@ type DatabasePool = ReturnType<typeof createDatabasePool>
 
 type ServerDependencies = {
   allowedTaskQueues?: Set<string>
+  financialAnalysis?: (input: {
+    userId: string
+    period: {
+      startDate: string
+      endDate: string
+      label?: string
+    }
+  }) => Promise<{
+    status: 'generated' | 'reused'
+    snapshotId: string
+    jobId?: string
+    inputHash: string
+    formulaVersion: string
+  }>
   logger: Logger
   plaidSync?: (input: {
     userId: string
@@ -52,6 +69,7 @@ type WorkerResponse = {
   body:
     | HealthResponse
     | CloudTaskSmokeResponse
+    | FinancialAnalysisTaskResponse
     | PlaidSyncTaskResponse
     | { error: string }
 }
@@ -62,6 +80,7 @@ function sendJson(
   body:
     | HealthResponse
     | CloudTaskSmokeResponse
+    | FinancialAnalysisTaskResponse
     | PlaidSyncTaskResponse
     | { error: string },
 ) {
@@ -218,6 +237,57 @@ async function handlePlaidSyncTask(
   }
 }
 
+async function handleFinancialAnalysisTask(
+  bodyText: string | undefined,
+  headers: Record<string, string | string[] | undefined> | undefined,
+  { allowedTaskQueues, financialAnalysis }: ServerDependencies,
+): Promise<WorkerResponse> {
+  if (financialAnalysis === undefined) {
+    return {
+      statusCode: 503,
+      body: { error: 'financial_analysis_unavailable' },
+    }
+  }
+
+  const validation = validateCloudTasksRequest(headers, allowedTaskQueues)
+  if (!validation.ok) return validation.response
+
+  const parsed = financialAnalysisTaskPayloadSchema.safeParse(
+    bodyText === undefined || bodyText.length === 0
+      ? undefined
+      : JSON.parse(bodyText),
+  )
+  if (!parsed.success) {
+    return { statusCode: 400, body: { error: 'invalid_task_payload' } }
+  }
+
+  const period = {
+    startDate: parsed.data.period.startDate,
+    endDate: parsed.data.period.endDate,
+    ...(parsed.data.period.label === undefined
+      ? {}
+      : { label: parsed.data.period.label }),
+  }
+  const result = await financialAnalysis({
+    userId: parsed.data.userId,
+    period,
+  })
+
+  return {
+    statusCode: 200,
+    body: financialAnalysisTaskResponseSchema.parse({
+      status: result.status,
+      operation: parsed.data.operation,
+      userId: parsed.data.userId,
+      period,
+      snapshotId: result.snapshotId,
+      ...(result.jobId === undefined ? {} : { jobId: result.jobId }),
+      inputHash: result.inputHash,
+      formulaVersion: result.formulaVersion,
+    }),
+  }
+}
+
 export async function getWorkerResponse(
   method: string | undefined,
   path: string | undefined,
@@ -288,6 +358,22 @@ export async function getWorkerResponse(
     } catch (error) {
       logger.error({ err: error }, 'worker Plaid sync task failed')
       return { statusCode: 500, body: { error: 'plaid_sync_task_failed' } }
+    }
+  }
+
+  if (method === 'POST' && path === '/tasks/financial-analysis') {
+    try {
+      return await handleFinancialAnalysisTask(
+        request?.bodyText,
+        request?.headers,
+        dependencies,
+      )
+    } catch (error) {
+      logger.error({ err: error }, 'worker financial analysis task failed')
+      return {
+        statusCode: 500,
+        body: { error: 'financial_analysis_task_failed' },
+      }
     }
   }
 

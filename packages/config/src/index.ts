@@ -9,6 +9,7 @@ const commonEnvironmentSchema = z.object({
 })
 
 const webEnvironmentSchema = commonEnvironmentSchema.extend({
+  CLOUD_TASKS_AI_ANALYSIS_QUEUE: z.string().min(1).optional(),
   CLOUD_TASKS_CALCULATION_QUEUE: z.string().min(1).optional(),
   CLOUD_TASKS_INVOKER_SERVICE_ACCOUNT_EMAIL: z.email().optional(),
   CLOUD_TASKS_LOCATION: z.string().min(1).optional(),
@@ -30,6 +31,7 @@ const webEnvironmentSchema = commonEnvironmentSchema.extend({
 })
 
 const workerEnvironmentSchema = commonEnvironmentSchema.extend({
+  AI_PROVIDER: z.enum(['mock', 'vertex']).default('mock'),
   CLOUD_TASKS_ALLOWED_QUEUES: z.string().optional(),
   LOCAL_TOKEN_ENCRYPTION_KEY: z.string().refine((value) => {
     const decoded = Buffer.from(value, 'base64')
@@ -40,6 +42,9 @@ const workerEnvironmentSchema = commonEnvironmentSchema.extend({
     .enum(['sandbox', 'development', 'production'])
     .default('sandbox'),
   PLAID_SECRET: z.string().min(1),
+  VERTEX_AI_LOCATION: z.string().min(1).optional(),
+  VERTEX_AI_MODEL: z.string().min(1).optional(),
+  VERTEX_AI_PROJECT_ID: z.string().min(1).optional(),
   WORKER_PORT: z.coerce.number().int().positive().max(65_535).default(3001),
 })
 

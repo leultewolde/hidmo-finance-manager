@@ -4,7 +4,10 @@ export class AnalysisAiError extends Error {
     readonly code:
       | 'AI_PAYLOAD_TOO_LARGE'
       | 'AI_PAYLOAD_BLOCKED_FIELD'
-      | 'AI_OUTPUT_INVALID',
+      | 'AI_OUTPUT_INVALID'
+      | 'AI_PROVIDER_AUTH_FAILED'
+      | 'AI_PROVIDER_REQUEST_FAILED'
+      | 'AI_PROVIDER_RESPONSE_INVALID',
   ) {
     super(message)
     this.name = 'AnalysisAiError'

@@ -27,3 +27,10 @@ export {
   type JsonPrimitive,
   type JsonValue,
 } from './types.js'
+export {
+  buildVertexGenerateContentUrl,
+  createGoogleAuthAccessTokenProvider,
+  createVertexFinancialAnalysisProvider,
+  type VertexAccessTokenProvider,
+  type VertexFinancialAnalysisProviderConfiguration,
+} from './vertex-provider.js'

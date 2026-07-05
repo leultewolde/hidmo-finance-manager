@@ -1821,7 +1821,7 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
-          "default": "'candidate'"
+          "default": "'active'"
         },
         "priority": {
           "name": "priority",

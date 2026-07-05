@@ -624,7 +624,7 @@ export const recommendations = pgTable(
     formulaVersion: text('formula_version').notNull(),
     policyVersion: text('policy_version').notNull(),
     type: text('type').notNull(),
-    status: recommendationStatusEnum('status').notNull().default('candidate'),
+    status: recommendationStatusEnum('status').notNull().default('active'),
     priority: text('priority').notNull(),
     rank: integer('rank'),
     title: text('title').notNull(),

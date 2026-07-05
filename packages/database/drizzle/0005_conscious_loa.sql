@@ -1,5 +1,4 @@
-ALTER TYPE "public"."recommendation_status" ADD VALUE 'candidate' BEFORE 'active';--> statement-breakpoint
-ALTER TABLE "recommendations" ALTER COLUMN "status" SET DEFAULT 'candidate';--> statement-breakpoint
+ALTER TYPE "public"."recommendation_status" ADD VALUE IF NOT EXISTS 'candidate' BEFORE 'active';--> statement-breakpoint
 ALTER TABLE "recommendations" ALTER COLUMN "priority" SET DATA TYPE text USING (
   case
     when "priority" <= 1 then 'high'

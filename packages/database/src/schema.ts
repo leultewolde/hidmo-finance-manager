@@ -81,6 +81,7 @@ export const liabilitySourceEnum = pgEnum('liability_source', [
 ])
 export const streamKindEnum = pgEnum('stream_kind', ['income', 'expense'])
 export const recommendationStatusEnum = pgEnum('recommendation_status', [
+  'candidate',
   'active',
   'accepted',
   'dismissed',
@@ -616,9 +617,19 @@ export const recommendations = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    candidateId: text('candidate_id').notNull(),
+    periodStart: date('period_start').notNull(),
+    periodEnd: date('period_end').notNull(),
+    inputHash: text('input_hash').notNull(),
+    formulaVersion: text('formula_version').notNull(),
+    policyVersion: text('policy_version').notNull(),
     type: text('type').notNull(),
-    status: recommendationStatusEnum('status').notNull().default('active'),
-    priority: integer('priority').notNull(),
+    status: recommendationStatusEnum('status').notNull().default('candidate'),
+    priority: text('priority').notNull(),
+    rank: integer('rank'),
+    title: text('title').notNull(),
+    rationale: text('rationale').notNull(),
+    evidenceIds: jsonb('evidence_ids').notNull(),
     evidence: jsonb('evidence').notNull(),
     assumptions: jsonb('assumptions').notNull(),
     estimatedMonthlyImpactMinor: bigint('estimated_monthly_impact_minor', {
@@ -631,6 +642,33 @@ export const recommendations = pgTable(
     ...timestamps,
   },
   (table) => [
+    index('recommendations_user_period_idx').on(
+      table.userId,
+      table.periodStart,
+      table.periodEnd,
+    ),
+    index('recommendations_user_status_idx').on(table.userId, table.status),
+    uniqueIndex('recommendations_candidate_input_unique').on(
+      table.userId,
+      table.periodStart,
+      table.periodEnd,
+      table.inputHash,
+      table.formulaVersion,
+      table.policyVersion,
+      table.candidateId,
+    ),
+    check(
+      'recommendations_period_order',
+      sql`${table.periodStart} <= ${table.periodEnd}`,
+    ),
+    check(
+      'recommendations_priority_valid',
+      sql`${table.priority} in ('high', 'medium', 'low')`,
+    ),
+    check(
+      'recommendations_rank_positive',
+      sql`${table.rank} is null or ${table.rank} >= 1`,
+    ),
     check(
       'recommendations_confidence_range',
       sql`${table.confidenceBps} between 0 and 10000`,

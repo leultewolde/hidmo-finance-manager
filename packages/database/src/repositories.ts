@@ -18,10 +18,17 @@ import type {
   AnalysisInput,
   DatePeriod,
   Debt,
+  RecommendationCandidate,
+  RecommendationEvidenceReference,
+  RecommendationLifecycleStatus,
+  RecommendationPriority,
   Transaction,
   TransactionSplit,
 } from '@hidmo/finance-engine'
-import { assertTransactionSplits } from '@hidmo/finance-engine'
+import {
+  assertTransactionSplits,
+  validateRecommendationCandidate,
+} from '@hidmo/finance-engine'
 
 import type { Database } from './client.js'
 import {
@@ -46,6 +53,99 @@ import {
 } from './schema.js'
 
 type JsonObject = Record<string, unknown>
+
+export type RecommendationReadModel = RecommendationCandidate & {
+  rowId: string
+  userId: string
+  period: DatePeriod
+  inputHash: string
+  formulaVersion: string
+  policyVersion: string
+  rank?: number
+  evidence: RecommendationEvidenceReference[]
+  narrative?: string
+  modelMetadata?: JsonObject
+  createdAt: Date
+  updatedAt: Date
+}
+
+type RecommendationBatchInput = {
+  userId: string
+  period: DatePeriod
+  inputHash: string
+  formulaVersion: string
+  policyVersion: string
+  evidence: readonly RecommendationEvidenceReference[]
+  candidates: readonly RecommendationCandidate[]
+}
+
+type SerializedRecommendationEvidence = Omit<
+  RecommendationEvidenceReference,
+  'amountMinor'
+> & {
+  amountMinor?: string
+}
+
+function serializeRecommendationEvidence(
+  evidence: RecommendationEvidenceReference,
+): SerializedRecommendationEvidence {
+  const serialized: SerializedRecommendationEvidence = {
+    id: evidence.id,
+    kind: evidence.kind,
+    label: evidence.label,
+  }
+  if (evidence.period !== undefined) serialized.period = evidence.period
+  if (evidence.amountMinor !== undefined) {
+    serialized.amountMinor = evidence.amountMinor.toString()
+  }
+  if (evidence.percentageBps !== undefined) {
+    serialized.percentageBps = evidence.percentageBps
+  }
+  if (evidence.currency !== undefined) serialized.currency = evidence.currency
+  if (evidence.severity !== undefined) serialized.severity = evidence.severity
+  return serialized
+}
+
+function deserializeRecommendationEvidence(
+  evidence: SerializedRecommendationEvidence,
+): RecommendationEvidenceReference {
+  const deserialized: RecommendationEvidenceReference = {
+    id: evidence.id,
+    kind: evidence.kind,
+    label: evidence.label,
+  }
+  if (evidence.period !== undefined) deserialized.period = evidence.period
+  if (evidence.amountMinor !== undefined) {
+    deserialized.amountMinor = BigInt(evidence.amountMinor)
+  }
+  if (evidence.percentageBps !== undefined) {
+    deserialized.percentageBps = evidence.percentageBps
+  }
+  if (evidence.currency !== undefined) deserialized.currency = evidence.currency
+  if (evidence.severity !== undefined) {
+    deserialized.severity = evidence.severity
+  }
+  return deserialized
+}
+
+function recommendationPriorityOrder(priority: RecommendationPriority) {
+  switch (priority) {
+    case 'high':
+      return 1
+    case 'medium':
+      return 2
+    case 'low':
+      return 3
+  }
+}
+
+function recommendationOrderSql() {
+  return sql`case ${recommendations.priority}
+    when 'high' then 1
+    when 'medium' then 2
+    else 3
+  end`
+}
 
 function toDebtKind(kind: AccountKind): Debt['kind'] {
   switch (kind) {
@@ -1644,16 +1744,161 @@ export class MetricRepository {
 export class RecommendationRepository {
   constructor(private readonly db: Database) {}
 
-  async save(input: typeof recommendations.$inferInsert) {
-    const [created] = await this.db
-      .insert(recommendations)
-      .values(input)
-      .returning()
-    return created
+  async upsertCandidateBatch(input: RecommendationBatchInput) {
+    const evidenceById = new Map(
+      input.evidence.map((entry) => [entry.id, entry]),
+    )
+
+    return this.db.transaction(async (tx) => {
+      const rows: (typeof recommendations.$inferSelect)[] = []
+
+      for (const candidate of input.candidates) {
+        validateRecommendationCandidate(candidate, input.evidence)
+
+        const candidateEvidence = candidate.evidenceIds.map((evidenceId) => {
+          const evidence = evidenceById.get(evidenceId)
+          if (evidence === undefined) {
+            throw new Error(`Recommendation evidence not found: ${evidenceId}`)
+          }
+          return serializeRecommendationEvidence(evidence)
+        })
+        const rank = recommendationPriorityOrder(candidate.priority)
+
+        const [row] = await tx
+          .insert(recommendations)
+          .values({
+            id: randomUUID(),
+            userId: input.userId,
+            candidateId: candidate.id,
+            periodStart: input.period.startDate,
+            periodEnd: input.period.endDate,
+            inputHash: input.inputHash,
+            formulaVersion: input.formulaVersion,
+            policyVersion: input.policyVersion,
+            type: candidate.type,
+            status: candidate.status,
+            priority: candidate.priority,
+            rank,
+            title: candidate.title,
+            rationale: candidate.rationale,
+            evidenceIds: candidate.evidenceIds,
+            evidence: candidateEvidence,
+            assumptions: candidate.assumptions,
+            estimatedMonthlyImpactMinor: candidate.estimatedMonthlyImpactMinor,
+            currency: candidate.currency,
+            confidenceBps: candidate.confidenceBps,
+            narrative: null,
+            modelMetadata: null,
+          })
+          .onConflictDoUpdate({
+            target: [
+              recommendations.userId,
+              recommendations.periodStart,
+              recommendations.periodEnd,
+              recommendations.inputHash,
+              recommendations.formulaVersion,
+              recommendations.policyVersion,
+              recommendations.candidateId,
+            ],
+            set: {
+              type: candidate.type,
+              priority: candidate.priority,
+              rank,
+              title: candidate.title,
+              rationale: candidate.rationale,
+              evidenceIds: candidate.evidenceIds,
+              evidence: candidateEvidence,
+              assumptions: candidate.assumptions,
+              estimatedMonthlyImpactMinor:
+                candidate.estimatedMonthlyImpactMinor,
+              currency: candidate.currency,
+              confidenceBps: candidate.confidenceBps,
+              updatedAt: new Date(),
+            },
+          })
+          .returning()
+
+        if (row !== undefined) rows.push(row)
+      }
+
+      await tx
+        .update(recommendations)
+        .set({
+          status: 'expired',
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(recommendations.userId, input.userId),
+            eq(recommendations.periodStart, input.period.startDate),
+            eq(recommendations.periodEnd, input.period.endDate),
+            eq(recommendations.formulaVersion, input.formulaVersion),
+            eq(recommendations.policyVersion, input.policyVersion),
+            inArray(recommendations.status, ['candidate', 'active']),
+            sql`${recommendations.inputHash} <> ${input.inputHash}`,
+          ),
+        )
+
+      return rows.map(recommendationRowToReadModel)
+    })
+  }
+
+  async listForInput(input: {
+    userId: string
+    period: DatePeriod
+    inputHash: string
+    formulaVersion: string
+    policyVersion: string
+  }): Promise<RecommendationReadModel[]> {
+    const rows = await this.db
+      .select()
+      .from(recommendations)
+      .where(
+        and(
+          eq(recommendations.userId, input.userId),
+          eq(recommendations.periodStart, input.period.startDate),
+          eq(recommendations.periodEnd, input.period.endDate),
+          eq(recommendations.inputHash, input.inputHash),
+          eq(recommendations.formulaVersion, input.formulaVersion),
+          eq(recommendations.policyVersion, input.policyVersion),
+        ),
+      )
+      .orderBy(
+        asc(recommendationOrderSql()),
+        asc(recommendations.rank),
+        asc(recommendations.candidateId),
+      )
+
+    return rows.map(recommendationRowToReadModel)
+  }
+
+  async listCurrentForUserPeriod(
+    userId: string,
+    period: DatePeriod,
+  ): Promise<RecommendationReadModel[]> {
+    const rows = await this.db
+      .select()
+      .from(recommendations)
+      .where(
+        and(
+          eq(recommendations.userId, userId),
+          eq(recommendations.periodStart, period.startDate),
+          eq(recommendations.periodEnd, period.endDate),
+          inArray(recommendations.status, ['candidate', 'active']),
+        ),
+      )
+      .orderBy(
+        desc(recommendations.createdAt),
+        asc(recommendationOrderSql()),
+        asc(recommendations.rank),
+        asc(recommendations.candidateId),
+      )
+
+    return rows.map(recommendationRowToReadModel)
   }
 
   async listActiveForUser(userId: string) {
-    return this.db
+    const rows = await this.db
       .select()
       .from(recommendations)
       .where(
@@ -1662,8 +1907,86 @@ export class RecommendationRepository {
           eq(recommendations.status, 'active'),
         ),
       )
-      .orderBy(asc(recommendations.priority), asc(recommendations.id))
+      .orderBy(
+        asc(recommendationOrderSql()),
+        asc(recommendations.rank),
+        asc(recommendations.candidateId),
+      )
+
+    return rows.map(recommendationRowToReadModel)
   }
+
+  async updateStatus(
+    userId: string,
+    recommendationRowId: string,
+    status: RecommendationLifecycleStatus,
+  ) {
+    const [row] = await this.db
+      .update(recommendations)
+      .set({
+        status,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(recommendations.id, recommendationRowId),
+          eq(recommendations.userId, userId),
+        ),
+      )
+      .returning()
+
+    if (row === undefined) {
+      throw new Error('Recommendation not found')
+    }
+
+    return recommendationRowToReadModel(row)
+  }
+}
+
+function recommendationRowToReadModel(
+  row: typeof recommendations.$inferSelect,
+): RecommendationReadModel {
+  const evidence = (
+    row.evidence as unknown as SerializedRecommendationEvidence[]
+  ).map(deserializeRecommendationEvidence)
+  const candidate: RecommendationCandidate = {
+    id: row.candidateId as RecommendationCandidate['id'],
+    type: row.type as RecommendationCandidate['type'],
+    title: row.title,
+    rationale: row.rationale,
+    priority: row.priority as RecommendationPriority,
+    status: row.status,
+    evidenceIds: row.evidenceIds as RecommendationCandidate['evidenceIds'],
+    assumptions: row.assumptions as RecommendationCandidate['assumptions'],
+    currency: row.currency,
+    confidenceBps: row.confidenceBps,
+  }
+  if (row.estimatedMonthlyImpactMinor !== null) {
+    candidate.estimatedMonthlyImpactMinor = row.estimatedMonthlyImpactMinor
+  }
+  validateRecommendationCandidate(candidate, evidence)
+
+  const readModel: RecommendationReadModel = {
+    ...candidate,
+    rowId: row.id,
+    userId: row.userId,
+    period: {
+      startDate: row.periodStart,
+      endDate: row.periodEnd,
+    },
+    inputHash: row.inputHash,
+    formulaVersion: row.formulaVersion,
+    policyVersion: row.policyVersion,
+    evidence,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+  if (row.rank !== null) readModel.rank = row.rank
+  if (row.narrative !== null) readModel.narrative = row.narrative
+  if (row.modelMetadata !== null) {
+    readModel.modelMetadata = row.modelMetadata as JsonObject
+  }
+  return readModel
 }
 
 export class TaskExecutionRepository {

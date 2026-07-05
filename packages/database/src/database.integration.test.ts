@@ -6,6 +6,7 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import {
+  buildRecommendationCandidates,
   buildFinancialAnalysisSummary,
   calculateBalanceSheet,
   calculateCashFlow,
@@ -336,6 +337,98 @@ describe('database migrations and synthetic seed', () => {
       lastErrorCode: null,
       completedAt: null,
     })
+  })
+
+  it('upserts recommendation candidate batches idempotently and expires stale open rows', async () => {
+    const period = { startDate: '2026-06-01', endDate: '2026-06-30' }
+    const analysisInput = await repositories.analysisInputs.buildForPeriod(
+      syntheticIds.user,
+      period,
+    )
+    const summary = buildFinancialAnalysisSummary(analysisInput)
+    const recommendationResult = buildRecommendationCandidates(summary.value)
+    const policyVersion = 'recommendation-policies/v1'
+
+    expect(recommendationResult.candidates.length).toBeGreaterThan(0)
+
+    const firstBatch = await repositories.recommendations.upsertCandidateBatch({
+      userId: syntheticIds.user,
+      period,
+      inputHash: 'recommendation-input-hash-1',
+      formulaVersion: summary.formulaVersion,
+      policyVersion,
+      evidence: recommendationResult.evidence,
+      candidates: recommendationResult.candidates,
+    })
+    const secondBatch = await repositories.recommendations.upsertCandidateBatch(
+      {
+        userId: syntheticIds.user,
+        period,
+        inputHash: 'recommendation-input-hash-1',
+        formulaVersion: summary.formulaVersion,
+        policyVersion,
+        evidence: recommendationResult.evidence,
+        candidates: recommendationResult.candidates,
+      },
+    )
+
+    expect(secondBatch.map((recommendation) => recommendation.rowId)).toEqual(
+      firstBatch.map((recommendation) => recommendation.rowId),
+    )
+    expect(secondBatch.map((recommendation) => recommendation.id)).toEqual(
+      recommendationResult.candidates.map((candidate) => candidate.id),
+    )
+    expect(
+      secondBatch.flatMap((recommendation) =>
+        recommendation.evidence
+          .map((evidence) => evidence.amountMinor)
+          .filter((amountMinor): amountMinor is bigint => Boolean(amountMinor)),
+      ),
+    ).toContain(210_000n)
+
+    const accepted = await repositories.recommendations.updateStatus(
+      syntheticIds.user,
+      firstBatch[0]!.rowId,
+      'accepted',
+    )
+    expect(accepted.status).toBe('accepted')
+
+    await repositories.recommendations.upsertCandidateBatch({
+      userId: syntheticIds.user,
+      period,
+      inputHash: 'recommendation-input-hash-2',
+      formulaVersion: summary.formulaVersion,
+      policyVersion,
+      evidence: recommendationResult.evidence,
+      candidates: recommendationResult.candidates,
+    })
+
+    const oldInputRows = await repositories.recommendations.listForInput({
+      userId: syntheticIds.user,
+      period,
+      inputHash: 'recommendation-input-hash-1',
+      formulaVersion: summary.formulaVersion,
+      policyVersion,
+    })
+    const currentRows =
+      await repositories.recommendations.listCurrentForUserPeriod(
+        syntheticIds.user,
+        period,
+      )
+
+    expect(oldInputRows[0]?.status).toBe('accepted')
+    expect(
+      oldInputRows
+        .slice(1)
+        .every((recommendation) => recommendation.status === 'expired'),
+    ).toBe(true)
+    expect(currentRows).toHaveLength(recommendationResult.candidates.length)
+    expect(
+      currentRows.every(
+        (recommendation) =>
+          recommendation.inputHash === 'recommendation-input-hash-2',
+      ),
+    ).toBe(true)
   })
 })
 

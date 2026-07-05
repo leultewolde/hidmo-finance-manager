@@ -36,6 +36,13 @@
       "when": 1783103243866,
       "tag": "0004_analysis_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783290194950,
+      "tag": "0005_conscious_loa",
+      "breakpoints": true
     }
   ]
 }

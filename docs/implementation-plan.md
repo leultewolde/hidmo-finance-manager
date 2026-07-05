@@ -467,6 +467,10 @@ Completion gate:
 **Outcome:** recommendations are evidence-based, and Gemini explains rather
 than calculates.
 
+See the dedicated
+[recommendations implementation DAG](./recommendations-implementation-dag.md)
+for work drivers, dependencies, PR sequence, and acceptance checks.
+
 Implementation work:
 
 1. Implement recommendation candidates as deterministic policies.

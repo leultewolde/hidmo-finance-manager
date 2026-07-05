@@ -15,3 +15,10 @@ export {
   type StableJsonPrimitive,
   type StableJsonValue,
 } from './hash.js'
+export {
+  generateRecommendations,
+  RecommendationGenerationError,
+  type RecommendationGenerationResult,
+  type RecommendationGenerationServiceInput,
+  type RecommendationGenerationStatus,
+} from './recommendation-service.js'

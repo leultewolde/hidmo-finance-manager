@@ -386,6 +386,41 @@ describe('database migrations and synthetic seed', () => {
       ),
     ).toContain(210_000n)
 
+    const grounded =
+      await repositories.recommendations.applyGroundedRecommendations({
+        userId: syntheticIds.user,
+        period,
+        inputHash: 'recommendation-input-hash-1',
+        formulaVersion: summary.formulaVersion,
+        policyVersion,
+        recommendations: secondBatch.map((recommendation, index) => ({
+          candidateId: recommendation.id,
+          rank: index + 1,
+          priority: recommendation.priority,
+          title: recommendation.title,
+          rationale: recommendation.rationale,
+          evidenceIds: recommendation.evidenceIds,
+          assumptions: recommendation.assumptions,
+          confidenceBps: recommendation.confidenceBps,
+        })),
+        metadata: {
+          provider: 'mock',
+          model: 'mock-recommendation-grounding-v1',
+          promptVersion: 'recommendations-grounded/v1',
+          outputSchemaVersion: 1,
+          inputBytes: 100,
+          outputBytes: 200,
+        },
+      })
+
+    expect(
+      grounded.every((recommendation) => recommendation.status === 'active'),
+    ).toBe(true)
+    expect(grounded[0]?.modelMetadata).toMatchObject({
+      provider: 'mock',
+      promptVersion: 'recommendations-grounded/v1',
+    })
+
     const accepted = await repositories.recommendations.updateStatus(
       syntheticIds.user,
       firstBatch[0]!.rowId,

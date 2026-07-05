@@ -72,21 +72,29 @@ export function serializeRecommendationGroundingInput(input: {
   candidates: readonly RecommendationCandidate[]
 }): JsonValue {
   assertRecommendationPayloadSafe(input)
+  const candidates = input.candidates.map((candidate) => {
+    const serialized: Record<string, unknown> = {
+      id: candidate.id,
+      type: candidate.type,
+      title: candidate.title,
+      rationale: candidate.rationale,
+      priority: candidate.priority,
+      evidenceIds: candidate.evidenceIds,
+      assumptions: candidate.assumptions,
+      currency: candidate.currency,
+      confidenceBps: candidate.confidenceBps,
+    }
+    if (candidate.estimatedMonthlyImpactMinor !== undefined) {
+      serialized.estimatedMonthlyImpactMinor =
+        candidate.estimatedMonthlyImpactMinor
+    }
+    return serialized
+  })
+
   return toJsonValue(
     {
       evidence: input.evidence,
-      candidates: input.candidates.map((candidate) => ({
-        id: candidate.id,
-        type: candidate.type,
-        title: candidate.title,
-        rationale: candidate.rationale,
-        priority: candidate.priority,
-        evidenceIds: candidate.evidenceIds,
-        assumptions: candidate.assumptions,
-        estimatedMonthlyImpactMinor: candidate.estimatedMonthlyImpactMinor,
-        currency: candidate.currency,
-        confidenceBps: candidate.confidenceBps,
-      })),
+      candidates,
     },
     '$',
   )

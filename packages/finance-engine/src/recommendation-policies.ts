@@ -27,6 +27,8 @@ export type RecommendationPolicyResult = {
   candidates: RecommendationCandidate[]
 }
 
+export const recommendationPolicyVersion = 'recommendation-policies/v1' as const
+
 const defaultPolicyOptions = {
   emergencyFundTargetMonthsHundredths: 300,
   highInterestAprBps: 1_500,

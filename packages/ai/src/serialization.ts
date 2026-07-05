@@ -1,9 +1,15 @@
-import type { DeterministicFinancialSummary } from '@hidmo/finance-engine'
+import {
+  assertRecommendationPayloadSafe,
+  type DeterministicFinancialSummary,
+  type RecommendationCandidate,
+  type RecommendationEvidenceReference,
+} from '@hidmo/finance-engine'
 
 import { AnalysisAiError } from './errors.js'
 import type { JsonValue } from './types.js'
 
 export const defaultMaxAnalysisPayloadBytes = 24_000
+export const defaultMaxRecommendationPayloadBytes = 32_000
 
 const blockedKeyPattern =
   /(^|_)(token|secret|password|credential|item_id|webhook|raw|provider_account|provider_account_id|provider_transaction|provider_transaction_id|account_number|routing|mask|email|name|merchant|description|freeform_note|user_note|private_note)s?$/i
@@ -59,6 +65,31 @@ export function serializeFinancialSummaryForAi(
   summary: DeterministicFinancialSummary,
 ): JsonValue {
   return toJsonValue(summary, '$')
+}
+
+export function serializeRecommendationGroundingInput(input: {
+  evidence: readonly RecommendationEvidenceReference[]
+  candidates: readonly RecommendationCandidate[]
+}): JsonValue {
+  assertRecommendationPayloadSafe(input)
+  return toJsonValue(
+    {
+      evidence: input.evidence,
+      candidates: input.candidates.map((candidate) => ({
+        id: candidate.id,
+        type: candidate.type,
+        title: candidate.title,
+        rationale: candidate.rationale,
+        priority: candidate.priority,
+        evidenceIds: candidate.evidenceIds,
+        assumptions: candidate.assumptions,
+        estimatedMonthlyImpactMinor: candidate.estimatedMonthlyImpactMinor,
+        currency: candidate.currency,
+        confidenceBps: candidate.confidenceBps,
+      })),
+    },
+    '$',
+  )
 }
 
 export function measureJsonPayloadBytes(payload: JsonValue): number {

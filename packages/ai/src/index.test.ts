@@ -1,14 +1,25 @@
 import { describe, expect, it } from 'vitest'
 
-import type { DeterministicFinancialSummary } from '@hidmo/finance-engine'
+import {
+  createRecommendationCandidateId,
+  createRecommendationEvidenceId,
+  type DeterministicFinancialSummary,
+  type RecommendationCandidate,
+  type RecommendationEvidenceReference,
+} from '@hidmo/finance-engine'
 
 import {
   AnalysisAiError,
   buildFinancialAnalysisNarrativePrompt,
+  buildRecommendationGroundingPrompt,
   createMockFinancialAnalysisProvider,
+  createMockRecommendationGroundingProvider,
   financialAnalysisPromptVersion,
+  recommendationGroundingPromptVersion,
   serializeFinancialSummaryForAi,
+  serializeRecommendationGroundingInput,
   validateFinancialAnalysisNarrative,
+  validateGroundedRecommendationResponse,
 } from './index.js'
 
 const summary: DeterministicFinancialSummary = {
@@ -93,6 +104,75 @@ const summary: DeterministicFinancialSummary = {
     },
   ],
 }
+
+const freeCashFlowEvidenceId = createRecommendationEvidenceId(
+  'metric',
+  'free-cash-flow',
+)
+const debtEvidenceId = createRecommendationEvidenceId(
+  'metric',
+  'high-interest-debt',
+)
+const cashFlowCandidateId = createRecommendationCandidateId(
+  'negative_free_cash_flow',
+  'current-period',
+)
+const debtCandidateId = createRecommendationCandidateId(
+  'high_interest_debt',
+  'current-period',
+)
+
+const recommendationEvidence: RecommendationEvidenceReference[] = [
+  {
+    id: freeCashFlowEvidenceId,
+    kind: 'metric',
+    label: 'Free cash flow',
+    period: summary.period,
+    amountMinor: -55_000n,
+    currency: 'USD',
+    severity: 'critical',
+  },
+  {
+    id: debtEvidenceId,
+    kind: 'metric',
+    label: 'High-interest debt balance',
+    period: summary.period,
+    amountMinor: 210_000n,
+    currency: 'USD',
+    severity: 'warning',
+  },
+]
+
+const recommendationCandidates: RecommendationCandidate[] = [
+  {
+    id: debtCandidateId,
+    type: 'high_interest_debt',
+    title: 'Prioritize extra payments toward high-interest debt',
+    rationale:
+      'High-interest balances are present, so extra repayment should come before lower-impact optimizations.',
+    priority: 'high',
+    status: 'candidate',
+    evidenceIds: [debtEvidenceId],
+    assumptions: ['APR thresholds are policy-defined.'],
+    estimatedMonthlyImpactMinor: 198_500n,
+    currency: 'USD',
+    confidenceBps: 8_500,
+  },
+  {
+    id: cashFlowCandidateId,
+    type: 'negative_free_cash_flow',
+    title: 'Close the monthly cash-flow gap',
+    rationale:
+      'Expenses and debt minimums are currently outrunning income for the analysis period.',
+    priority: 'high',
+    status: 'candidate',
+    evidenceIds: [freeCashFlowEvidenceId],
+    assumptions: ['Uses posted transactions in the deterministic period.'],
+    estimatedMonthlyImpactMinor: 55_000n,
+    currency: 'USD',
+    confidenceBps: 9_000,
+  },
+]
 
 describe('financial analysis AI guardrails', () => {
   it('serializes deterministic summaries into JSON-safe aggregate payloads', () => {
@@ -193,6 +273,146 @@ describe('mock financial analysis provider', () => {
         provider: 'mock',
         model: 'mock-financial-analysis-v1',
         promptVersion: financialAnalysisPromptVersion,
+        outputSchemaVersion: 1,
+      },
+    })
+  })
+})
+
+describe('recommendation grounding AI guardrails', () => {
+  it('serializes only grounded recommendation candidate and evidence payloads', () => {
+    const payload = serializeRecommendationGroundingInput({
+      evidence: recommendationEvidence,
+      candidates: recommendationCandidates,
+    })
+    const json = JSON.stringify(payload)
+
+    expect(json).toContain('"amountMinor":"-55000"')
+    expect(json).toContain(cashFlowCandidateId)
+    expect(json).not.toContain('provider_transaction_id')
+    expect(json).not.toContain('access_token')
+  })
+
+  it('rejects blocked fields before recommendation prompt construction', () => {
+    expect(() =>
+      serializeRecommendationGroundingInput({
+        evidence: recommendationEvidence,
+        candidates: recommendationCandidates.map((candidate) => ({
+          ...candidate,
+          providerTransactionId: 'provider-transaction-id',
+        })) as unknown as RecommendationCandidate[],
+      }),
+    ).toThrow()
+  })
+
+  it('builds a versioned recommendation grounding prompt', () => {
+    const prompt = buildRecommendationGroundingPrompt({
+      evidence: recommendationEvidence,
+      candidates: recommendationCandidates,
+    })
+
+    expect(prompt.promptVersion).toBe(recommendationGroundingPromptVersion)
+    expect(prompt.systemInstruction).toContain('Return only JSON')
+    expect(prompt.userPrompt).toContain('candidateId')
+    expect(prompt.payloadBytes).toBeGreaterThan(0)
+  })
+
+  it('rejects unknown candidate and evidence references', () => {
+    expect(() =>
+      validateGroundedRecommendationResponse(
+        {
+          recommendations: [
+            {
+              candidateId: 'rec:high_interest_debt:unknown',
+              rank: 1,
+              priority: 'high',
+              title: 'Prioritize extra payments',
+              rationale: 'High-interest debt evidence supports this.',
+              evidenceIds: [debtEvidenceId],
+              assumptions: [],
+              confidenceBps: 8_000,
+            },
+          ],
+        },
+        recommendationCandidates,
+        recommendationEvidence,
+      ),
+    ).toThrow()
+
+    expect(() =>
+      validateGroundedRecommendationResponse(
+        {
+          recommendations: [
+            {
+              candidateId: debtCandidateId,
+              rank: 1,
+              priority: 'high',
+              title: 'Prioritize extra payments',
+              rationale: 'High-interest debt evidence supports this.',
+              evidenceIds: ['ev:metric:not-supplied'],
+              assumptions: [],
+              confidenceBps: 8_000,
+            },
+          ],
+        },
+        recommendationCandidates,
+        recommendationEvidence,
+      ),
+    ).toThrow()
+  })
+
+  it('rejects prohibited claims from recommendation grounding output', () => {
+    expect(() =>
+      validateGroundedRecommendationResponse(
+        {
+          recommendations: [
+            {
+              candidateId: debtCandidateId,
+              rank: 1,
+              priority: 'high',
+              title: 'Guaranteed debt payoff',
+              rationale: 'This will definitely create guaranteed savings.',
+              evidenceIds: [debtEvidenceId],
+              assumptions: [],
+              confidenceBps: 8_000,
+            },
+          ],
+        },
+        recommendationCandidates,
+        recommendationEvidence,
+      ),
+    ).toThrow()
+  })
+})
+
+describe('mock recommendation grounding provider', () => {
+  it('returns deterministic schema-valid recommendations and metadata', async () => {
+    const provider = createMockRecommendationGroundingProvider()
+
+    await expect(
+      provider.rankAndExplain({
+        evidence: recommendationEvidence,
+        candidates: recommendationCandidates,
+      }),
+    ).resolves.toMatchObject({
+      recommendations: [
+        {
+          candidateId: debtCandidateId,
+          rank: 1,
+          priority: 'high',
+          evidenceIds: [debtEvidenceId],
+        },
+        {
+          candidateId: cashFlowCandidateId,
+          rank: 2,
+          priority: 'high',
+          evidenceIds: [freeCashFlowEvidenceId],
+        },
+      ],
+      metadata: {
+        provider: 'mock',
+        model: 'mock-recommendation-grounding-v1',
+        promptVersion: recommendationGroundingPromptVersion,
         outputSchemaVersion: 1,
       },
     })

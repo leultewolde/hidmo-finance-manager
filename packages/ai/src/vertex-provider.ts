@@ -1,12 +1,22 @@
 import { GoogleAuth } from 'google-auth-library'
+import { validateRecommendationProviderMetadata } from '@hidmo/finance-engine'
 
 import { AnalysisAiError } from './errors.js'
-import { buildFinancialAnalysisNarrativePrompt } from './prompts.js'
-import { validateFinancialAnalysisNarrative } from './schema.js'
+import {
+  buildFinancialAnalysisNarrativePrompt,
+  buildRecommendationGroundingPrompt,
+} from './prompts.js'
+import {
+  validateFinancialAnalysisNarrative,
+  validateGroundedRecommendationResponse,
+} from './schema.js'
 import type {
   AnalysisNarrativeRequest,
   AnalysisNarrativeResult,
   FinancialAnalysisAiProvider,
+  RecommendationGroundingProvider,
+  RecommendationGroundingRequest,
+  RecommendationGroundingResult,
 } from './types.js'
 
 type FetchFunction = typeof fetch
@@ -23,6 +33,9 @@ export type VertexFinancialAnalysisProviderConfiguration = {
   fetch?: FetchFunction
   accessTokenProvider?: VertexAccessTokenProvider
 }
+
+export type VertexRecommendationGroundingProviderConfiguration =
+  VertexFinancialAnalysisProviderConfiguration
 
 type VertexGenerateContentResponse = {
   candidates?: Array<{
@@ -124,12 +137,11 @@ function parseJsonCandidate(text: string): unknown {
   }
 }
 
-function usageMetadata(
-  response: VertexGenerateContentResponse,
-): Pick<
-  AnalysisNarrativeResult['metadata'],
-  'promptTokens' | 'completionTokens' | 'totalTokens'
-> {
+function usageMetadata(response: VertexGenerateContentResponse): {
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
+} {
   const usage = response.usageMetadata
   return {
     ...(usage?.promptTokenCount === undefined
@@ -212,6 +224,86 @@ export function createVertexFinancialAnalysisProvider(
           outputBytes: Buffer.byteLength(JSON.stringify(narrative), 'utf8'),
           ...usageMetadata(vertexResponse),
         },
+      }
+    },
+  }
+}
+
+export function createVertexRecommendationGroundingProvider(
+  configuration: VertexRecommendationGroundingProviderConfiguration,
+): RecommendationGroundingProvider {
+  const fetchImplementation = configuration.fetch ?? fetch
+  const accessTokenProvider =
+    configuration.accessTokenProvider ?? createGoogleAuthAccessTokenProvider()
+  const modelResourceName = buildModelResourceName(configuration)
+  const url = buildVertexGenerateContentUrl(configuration)
+
+  return {
+    async rankAndExplain(
+      request: RecommendationGroundingRequest,
+    ): Promise<RecommendationGroundingResult> {
+      const prompt = buildRecommendationGroundingPrompt(request)
+      const accessToken = await accessTokenProvider()
+      const response = await fetchImplementation(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{ text: prompt.systemInstruction }],
+          },
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: prompt.userPrompt }],
+            },
+          ],
+          generationConfig: {
+            temperature: configuration.temperature ?? 0.1,
+            maxOutputTokens: configuration.maxOutputTokens ?? 1_024,
+            responseMimeType: 'application/json',
+          },
+          labels: {
+            app: 'hidmo',
+            feature: 'recommendations',
+          },
+        }),
+      })
+
+      if (!response.ok) {
+        throw new AnalysisAiError(
+          `Vertex AI generateContent request failed with HTTP ${response.status.toString()}.`,
+          'AI_PROVIDER_REQUEST_FAILED',
+        )
+      }
+
+      const vertexResponse =
+        (await response.json()) as VertexGenerateContentResponse
+      const candidateJson = parseJsonCandidate(
+        extractCandidateText(vertexResponse),
+      )
+      const recommendations = validateGroundedRecommendationResponse(
+        candidateJson,
+        request.candidates,
+        request.evidence,
+      )
+
+      return {
+        recommendations,
+        metadata: validateRecommendationProviderMetadata({
+          provider: 'vertex-ai',
+          model: modelResourceName,
+          promptVersion: prompt.promptVersion,
+          outputSchemaVersion: prompt.outputSchemaVersion,
+          inputBytes: prompt.payloadBytes,
+          outputBytes: Buffer.byteLength(
+            JSON.stringify({ recommendations }),
+            'utf8',
+          ),
+          ...usageMetadata(vertexResponse),
+        }),
       }
     },
   }

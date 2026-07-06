@@ -2,6 +2,7 @@ import {
   createMockFinancialAnalysisProvider,
   createMockRecommendationGroundingProvider,
   createVertexFinancialAnalysisProvider,
+  createVertexRecommendationGroundingProvider,
   type FinancialAnalysisAiProvider,
   type RecommendationGroundingProvider,
 } from '@hidmo/ai'
@@ -44,6 +45,20 @@ function createFinancialAnalysisProvider(): FinancialAnalysisAiProvider {
     return createMockFinancialAnalysisProvider()
   }
 
+  return createVertexFinancialAnalysisProvider(vertexProviderConfiguration())
+}
+
+function createRecommendationGroundingProvider(): RecommendationGroundingProvider {
+  if (environment.AI_PROVIDER === 'mock') {
+    return createMockRecommendationGroundingProvider()
+  }
+
+  return createVertexRecommendationGroundingProvider(
+    vertexProviderConfiguration(),
+  )
+}
+
+function vertexProviderConfiguration() {
   if (
     environment.VERTEX_AI_PROJECT_ID === undefined ||
     environment.VERTEX_AI_LOCATION === undefined ||
@@ -54,24 +69,10 @@ function createFinancialAnalysisProvider(): FinancialAnalysisAiProvider {
     )
   }
 
-  return createVertexFinancialAnalysisProvider({
+  return {
     projectId: environment.VERTEX_AI_PROJECT_ID,
     location: environment.VERTEX_AI_LOCATION,
     model: environment.VERTEX_AI_MODEL,
-  })
-}
-
-function createRecommendationGroundingProvider(): RecommendationGroundingProvider {
-  if (environment.AI_PROVIDER === 'mock') {
-    return createMockRecommendationGroundingProvider()
-  }
-
-  return {
-    async rankAndExplain() {
-      throw new Error(
-        'Vertex recommendation grounding provider is not configured yet.',
-      )
-    },
   }
 }
 

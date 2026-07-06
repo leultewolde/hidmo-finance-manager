@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest'
 
-import type { DeterministicFinancialSummary } from '@hidmo/finance-engine'
+import {
+  createRecommendationCandidateId,
+  createRecommendationEvidenceId,
+  type DeterministicFinancialSummary,
+  type RecommendationCandidate,
+  type RecommendationEvidenceReference,
+} from '@hidmo/finance-engine'
 
 import {
   AnalysisAiError,
   buildVertexGenerateContentUrl,
   createVertexFinancialAnalysisProvider,
+  createVertexRecommendationGroundingProvider,
   financialAnalysisPromptVersion,
+  recommendationGroundingPromptVersion,
 } from './index.js'
 
 const summary: DeterministicFinancialSummary = {
@@ -96,6 +104,55 @@ const narrative = {
   ],
   caveats: ['Reviewed transactions only.'],
   disclaimer: 'Planning assistance only.',
+}
+
+const debtEvidenceId = createRecommendationEvidenceId(
+  'metric',
+  'high-interest-debt',
+)
+const debtCandidateId = createRecommendationCandidateId(
+  'high_interest_debt',
+  'current-period',
+)
+const recommendationEvidence: RecommendationEvidenceReference[] = [
+  {
+    id: debtEvidenceId,
+    kind: 'metric',
+    label: 'High-interest debt balance',
+    period: summary.period,
+    amountMinor: 250_000n,
+    currency: 'USD',
+    severity: 'warning',
+  },
+]
+const recommendationCandidates: RecommendationCandidate[] = [
+  {
+    id: debtCandidateId,
+    type: 'high_interest_debt',
+    title: 'Prioritize high-interest debt',
+    rationale: 'High-interest balances are present.',
+    priority: 'high',
+    status: 'candidate',
+    evidenceIds: [debtEvidenceId],
+    assumptions: ['APR thresholds are policy-defined.'],
+    estimatedMonthlyImpactMinor: 175_000n,
+    currency: 'USD',
+    confidenceBps: 8_500,
+  },
+]
+const groundedRecommendations = {
+  recommendations: [
+    {
+      candidateId: debtCandidateId,
+      rank: 1,
+      priority: 'high',
+      title: 'Prioritize high-interest debt',
+      rationale: 'Use extra cash flow to reduce high-interest balances first.',
+      evidenceIds: [debtEvidenceId],
+      assumptions: ['Minimum debt payments still stay current.'],
+      confidenceBps: 8_500,
+    },
+  ],
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -267,5 +324,124 @@ describe('Vertex financial analysis provider', () => {
         code: 'AI_OUTPUT_INVALID',
       },
     )
+  })
+})
+
+describe('Vertex recommendation grounding provider', () => {
+  it('calls Vertex generateContent with authenticated recommendation grounding request', async () => {
+    const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = []
+    const fetchImplementation: typeof fetch = async (input, init) => {
+      calls.push([input, init])
+      return jsonResponse({
+        candidates: [
+          {
+            content: {
+              parts: [{ text: JSON.stringify(groundedRecommendations) }],
+            },
+            finishReason: 'STOP',
+          },
+        ],
+        usageMetadata: {
+          promptTokenCount: 90,
+          candidatesTokenCount: 30,
+          totalTokenCount: 120,
+        },
+      })
+    }
+    const provider = createVertexRecommendationGroundingProvider({
+      projectId: 'finance-manager-dev-500423',
+      location: 'us',
+      model: 'gemini-3.1-flash-lite',
+      fetch: fetchImplementation,
+      accessTokenProvider: async () => 'test-access-token',
+    })
+
+    const result = await provider.rankAndExplain({
+      evidence: recommendationEvidence,
+      candidates: recommendationCandidates,
+    })
+    const [url, init] = calls[0]!
+    const body = JSON.parse(String(init?.body)) as {
+      systemInstruction: { parts: Array<{ text: string }> }
+      contents: Array<{ role: string; parts: Array<{ text: string }> }>
+      generationConfig: {
+        temperature: number
+        maxOutputTokens: number
+        responseMimeType: string
+      }
+      labels: Record<string, string>
+    }
+
+    expect(url).toBe(
+      'https://us-aiplatform.googleapis.com/v1/projects/finance-manager-dev-500423/locations/us/publishers/google/models/gemini-3.1-flash-lite:generateContent',
+    )
+    expect(init?.method).toBe('POST')
+    expect(init?.headers).toMatchObject({
+      Authorization: 'Bearer test-access-token',
+      'Content-Type': 'application/json',
+    })
+    expect(body.systemInstruction.parts[0]?.text).toContain('Return only JSON')
+    expect(body.contents[0]?.parts[0]?.text).toContain('candidateId')
+    expect(body.generationConfig).toEqual({
+      temperature: 0.1,
+      maxOutputTokens: 1_024,
+      responseMimeType: 'application/json',
+    })
+    expect(body.labels).toEqual({
+      app: 'hidmo',
+      feature: 'recommendations',
+    })
+    expect(result).toMatchObject({
+      recommendations: groundedRecommendations.recommendations,
+      metadata: {
+        provider: 'vertex-ai',
+        model:
+          'projects/finance-manager-dev-500423/locations/us/publishers/google/models/gemini-3.1-flash-lite',
+        promptVersion: recommendationGroundingPromptVersion,
+        outputSchemaVersion: 1,
+        promptTokens: 90,
+        completionTokens: 30,
+        totalTokens: 120,
+      },
+    })
+  })
+
+  it('rejects recommendation responses with unsupported evidence references', async () => {
+    const provider = createVertexRecommendationGroundingProvider({
+      projectId: 'project',
+      location: 'us',
+      model: 'gemini-3.1-flash-lite',
+      fetch: async () =>
+        jsonResponse({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      recommendations: [
+                        {
+                          ...groundedRecommendations.recommendations[0],
+                          evidenceIds: ['ev:metric:not-supplied'],
+                        },
+                      ],
+                    }),
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      accessTokenProvider: async () => 'test-access-token',
+    })
+
+    await expect(
+      provider.rankAndExplain({
+        evidence: recommendationEvidence,
+        candidates: recommendationCandidates,
+      }),
+    ).rejects.toMatchObject({
+      code: 'AI_OUTPUT_INVALID',
+    })
   })
 })

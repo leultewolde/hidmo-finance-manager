@@ -12,6 +12,7 @@ locals {
       display_name = "Finance Manager worker runtime"
       description  = "Runs private Cloud Tasks handlers."
       project_roles = [
+        "roles/aiplatform.user",
         "roles/cloudsql.client",
       ]
     }
@@ -508,6 +509,9 @@ module "cloud_run" {
     AI_PROVIDER                = "mock"
     CLOUD_TASKS_ALLOWED_QUEUES = "calculation,plaid-sync,ai-analysis"
     PLAID_ENV                  = "sandbox"
+    VERTEX_AI_LOCATION         = "us"
+    VERTEX_AI_MODEL            = "gemini-3.1-flash-lite"
+    VERTEX_AI_PROJECT_ID       = var.project_id
   })
   migration_environment  = var.migration_environment
   web_secret_env         = local.cloud_run_web_secret_env

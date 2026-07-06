@@ -46,6 +46,8 @@ export {
   buildVertexGenerateContentUrl,
   createGoogleAuthAccessTokenProvider,
   createVertexFinancialAnalysisProvider,
+  createVertexRecommendationGroundingProvider,
   type VertexAccessTokenProvider,
   type VertexFinancialAnalysisProviderConfiguration,
+  type VertexRecommendationGroundingProviderConfiguration,
 } from './vertex-provider.js'

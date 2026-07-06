@@ -1,4 +1,5 @@
 import {
+  RecommendationContractError,
   validateGroundedRecommendationOutput,
   type FinancialAnalysisNarrative,
   type GroundedRecommendationOutput,
@@ -76,11 +77,21 @@ export function validateGroundedRecommendationResponse(
     )
   }
 
-  return parsed.data.recommendations.map((recommendation) =>
-    validateGroundedRecommendationOutput(
-      recommendation as GroundedRecommendationOutput,
-      candidates,
-      evidence,
-    ),
-  )
+  try {
+    return parsed.data.recommendations.map((recommendation) =>
+      validateGroundedRecommendationOutput(
+        recommendation as GroundedRecommendationOutput,
+        candidates,
+        evidence,
+      ),
+    )
+  } catch (error) {
+    if (error instanceof RecommendationContractError) {
+      throw new AnalysisAiError(
+        `AI recommendation output failed grounding validation: ${error.code}`,
+        'AI_OUTPUT_INVALID',
+      )
+    }
+    throw error
+  }
 }

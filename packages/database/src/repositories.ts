@@ -20,8 +20,10 @@ import type {
   Debt,
   RecommendationCandidate,
   RecommendationEvidenceReference,
+  GroundedRecommendationOutput,
   RecommendationLifecycleStatus,
   RecommendationPriority,
+  RecommendationProviderMetadata,
   Transaction,
   TransactionSplit,
 } from '@hidmo/finance-engine'
@@ -77,6 +79,16 @@ type RecommendationBatchInput = {
   policyVersion: string
   evidence: readonly RecommendationEvidenceReference[]
   candidates: readonly RecommendationCandidate[]
+}
+
+type RecommendationGroundedBatchInput = {
+  userId: string
+  period: DatePeriod
+  inputHash: string
+  formulaVersion: string
+  policyVersion: string
+  recommendations: readonly GroundedRecommendationOutput[]
+  metadata: RecommendationProviderMetadata
 }
 
 type SerializedRecommendationEvidence = Omit<
@@ -1870,6 +1882,66 @@ export class RecommendationRepository {
       )
 
     return rows.map(recommendationRowToReadModel)
+  }
+
+  async applyGroundedRecommendations(input: RecommendationGroundedBatchInput) {
+    return this.db.transaction(async (tx) => {
+      for (const recommendation of input.recommendations) {
+        const [row] = await tx
+          .update(recommendations)
+          .set({
+            status: 'active',
+            rank: recommendation.rank,
+            priority: recommendation.priority,
+            title: recommendation.title,
+            rationale: recommendation.rationale,
+            evidenceIds: recommendation.evidenceIds,
+            assumptions: recommendation.assumptions,
+            confidenceBps: recommendation.confidenceBps,
+            modelMetadata: input.metadata as unknown as JsonObject,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(recommendations.userId, input.userId),
+              eq(recommendations.periodStart, input.period.startDate),
+              eq(recommendations.periodEnd, input.period.endDate),
+              eq(recommendations.inputHash, input.inputHash),
+              eq(recommendations.formulaVersion, input.formulaVersion),
+              eq(recommendations.policyVersion, input.policyVersion),
+              eq(recommendations.candidateId, recommendation.candidateId),
+            ),
+          )
+          .returning()
+
+        if (row === undefined) {
+          throw new Error(
+            `Recommendation candidate not found: ${recommendation.candidateId}`,
+          )
+        }
+      }
+
+      const rows = await tx
+        .select()
+        .from(recommendations)
+        .where(
+          and(
+            eq(recommendations.userId, input.userId),
+            eq(recommendations.periodStart, input.period.startDate),
+            eq(recommendations.periodEnd, input.period.endDate),
+            eq(recommendations.inputHash, input.inputHash),
+            eq(recommendations.formulaVersion, input.formulaVersion),
+            eq(recommendations.policyVersion, input.policyVersion),
+          ),
+        )
+        .orderBy(
+          asc(recommendationOrderSql()),
+          asc(recommendations.rank),
+          asc(recommendations.candidateId),
+        )
+
+      return rows.map(recommendationRowToReadModel)
+    })
   }
 
   async listCurrentForUserPeriod(

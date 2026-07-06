@@ -92,6 +92,38 @@ export type FinancialAnalysisTaskResponse = z.infer<
   typeof financialAnalysisTaskResponseSchema
 >
 
+export const recommendationGenerationTaskPayloadSchema = z.object({
+  operation: z.literal('recommendations.generate'),
+  schemaVersion: z.literal(1),
+  userId: z.uuid(),
+  period: analysisPeriodSchema,
+  idempotencyKey: z.string().min(1).max(200),
+})
+
+export type RecommendationGenerationTaskPayload = z.infer<
+  typeof recommendationGenerationTaskPayloadSchema
+>
+
+export const recommendationGenerationTaskResponseSchema = z.object({
+  status: z.enum(['generated', 'reused', 'no_candidates', 'duplicate']),
+  operation: z.literal('recommendations.generate'),
+  userId: z.uuid(),
+  period: analysisPeriodSchema,
+  idempotencyKey: z.string().min(1),
+  taskName: z.string().min(1),
+  inputHash: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+  formulaVersion: z.string().min(1).optional(),
+  policyVersion: z.string().min(1).optional(),
+  recommendationCount: z.number().int().nonnegative().optional(),
+})
+
+export type RecommendationGenerationTaskResponse = z.infer<
+  typeof recommendationGenerationTaskResponseSchema
+>
+
 export const plaidWebhookPayloadSchema = z.object({
   webhook_type: z.string().min(1),
   webhook_code: z.string().min(1),

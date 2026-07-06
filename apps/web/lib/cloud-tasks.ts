@@ -6,6 +6,7 @@ import {
   cloudTaskSmokePayloadSchema,
   financialAnalysisTaskPayloadSchema,
   plaidSyncTaskPayloadSchema,
+  recommendationGenerationTaskPayloadSchema,
 } from '@hidmo/contracts'
 import type { AnalysisPeriodPayload } from '@hidmo/contracts'
 
@@ -202,6 +203,32 @@ export async function enqueueFinancialAnalysisTask(input: {
   const task = await createHttpTask({
     config,
     endpoint: '/tasks/financial-analysis',
+    payload,
+    queue: config.aiAnalysisQueue,
+  })
+
+  return {
+    idempotencyKey: input.idempotencyKey,
+    taskName: task.name ?? '',
+  }
+}
+
+export async function enqueueRecommendationGenerationTask(input: {
+  userId: string
+  period: AnalysisPeriodPayload
+  idempotencyKey: string
+}) {
+  const config = getCloudTaskConfig()
+  const payload = recommendationGenerationTaskPayloadSchema.parse({
+    operation: 'recommendations.generate',
+    schemaVersion: 1,
+    userId: input.userId,
+    period: input.period,
+    idempotencyKey: input.idempotencyKey,
+  })
+  const task = await createHttpTask({
+    config,
+    endpoint: '/tasks/recommendations',
     payload,
     queue: config.aiAnalysisQueue,
   })

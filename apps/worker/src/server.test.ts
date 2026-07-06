@@ -312,4 +312,159 @@ describe('worker health server', () => {
     expect(response.statusCode).toBe(403)
     expect(response.body).toEqual({ error: 'unexpected_task_queue' })
   })
+
+  it('runs a recommendation generation task from the ai-analysis queue', async () => {
+    const recommendations = vi.fn().mockResolvedValue({
+      status: 'generated',
+      inputHash:
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      formulaVersion: 'financial-analysis-summary/v1',
+      policyVersion: 'recommendation-policies/v1',
+      recommendationCount: 3,
+    })
+    const taskExecutions = {
+      claim: vi.fn().mockResolvedValue(true),
+      complete: vi.fn().mockResolvedValue(undefined),
+      fail: vi.fn(),
+    }
+
+    const response = await getWorkerResponse(
+      'POST',
+      '/tasks/recommendations',
+      {
+        allowedTaskQueues: new Set(['ai-analysis']),
+        logger: createLogger('test', 'silent'),
+        pool: { query: vi.fn() } as never,
+        recommendations,
+        taskExecutions,
+      },
+      {
+        bodyText: JSON.stringify({
+          operation: 'recommendations.generate',
+          schemaVersion: 1,
+          userId: '00000000-0000-4000-8000-000000000001',
+          period: {
+            startDate: '2026-06-01',
+            endDate: '2026-06-30',
+            label: 'June 2026',
+          },
+          idempotencyKey:
+            'recommendations:00000000-0000-4000-8000-000000000001:2026-06-01:2026-06-30:1',
+        }),
+        headers: {
+          'x-cloudtasks-queuename': 'ai-analysis',
+          'x-cloudtasks-taskname': 'recommendations-test',
+        },
+      },
+    )
+
+    expect(response.statusCode).toBe(200)
+    expect(response.body).toMatchObject({
+      operation: 'recommendations.generate',
+      status: 'generated',
+      userId: '00000000-0000-4000-8000-000000000001',
+      formulaVersion: 'financial-analysis-summary/v1',
+      policyVersion: 'recommendation-policies/v1',
+      recommendationCount: 3,
+      idempotencyKey:
+        'recommendations:00000000-0000-4000-8000-000000000001:2026-06-01:2026-06-30:1',
+      taskName: 'recommendations-test',
+    })
+    expect(taskExecutions.claim).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: '00000000-0000-4000-8000-000000000001',
+        operation: 'recommendations.generate',
+        schemaVersion: 1,
+      }),
+    )
+    expect(taskExecutions.complete).toHaveBeenCalledOnce()
+    expect(recommendations).toHaveBeenCalledWith({
+      userId: '00000000-0000-4000-8000-000000000001',
+      period: {
+        startDate: '2026-06-01',
+        endDate: '2026-06-30',
+        label: 'June 2026',
+      },
+    })
+  })
+
+  it('treats repeated recommendation task deliveries as successful duplicates', async () => {
+    const recommendations = vi.fn()
+    const response = await getWorkerResponse(
+      'POST',
+      '/tasks/recommendations',
+      {
+        allowedTaskQueues: new Set(['ai-analysis']),
+        logger: createLogger('test', 'silent'),
+        pool: { query: vi.fn() } as never,
+        recommendations,
+        taskExecutions: {
+          claim: vi.fn().mockResolvedValue(false),
+          complete: vi.fn(),
+        },
+      },
+      {
+        bodyText: JSON.stringify({
+          operation: 'recommendations.generate',
+          schemaVersion: 1,
+          userId: '00000000-0000-4000-8000-000000000001',
+          period: {
+            startDate: '2026-06-01',
+            endDate: '2026-06-30',
+          },
+          idempotencyKey:
+            'recommendations:00000000-0000-4000-8000-000000000001:2026-06-01:2026-06-30:1',
+        }),
+        headers: {
+          'x-cloudtasks-queuename': 'ai-analysis',
+          'x-cloudtasks-taskname': 'recommendations-test',
+        },
+      },
+    )
+
+    expect(response.statusCode).toBe(200)
+    expect(response.body).toMatchObject({
+      operation: 'recommendations.generate',
+      status: 'duplicate',
+      taskName: 'recommendations-test',
+    })
+    expect(recommendations).not.toHaveBeenCalled()
+  })
+
+  it('rejects recommendation generation tasks from unexpected queues', async () => {
+    const response = await getWorkerResponse(
+      'POST',
+      '/tasks/recommendations',
+      {
+        allowedTaskQueues: new Set(['calculation']),
+        logger: createLogger('test', 'silent'),
+        pool: { query: vi.fn() } as never,
+        recommendations: vi.fn(),
+        taskExecutions: {
+          claim: vi.fn(),
+          complete: vi.fn(),
+        },
+      },
+      {
+        bodyText: JSON.stringify({
+          operation: 'recommendations.generate',
+          schemaVersion: 1,
+          userId: '00000000-0000-4000-8000-000000000001',
+          period: {
+            startDate: '2026-06-01',
+            endDate: '2026-06-30',
+          },
+          idempotencyKey:
+            'recommendations:00000000-0000-4000-8000-000000000001:2026-06-01:2026-06-30:1',
+        }),
+        headers: {
+          'x-cloudtasks-queuename': 'ai-analysis',
+          'x-cloudtasks-taskname': 'recommendations-test',
+        },
+      },
+    )
+
+    expect(response.statusCode).toBe(403)
+    expect(response.body).toEqual({ error: 'unexpected_task_queue' })
+  })
 })

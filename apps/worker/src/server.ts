@@ -13,10 +13,13 @@ import {
   healthResponseSchema,
   plaidSyncTaskPayloadSchema,
   plaidSyncTaskResponseSchema,
+  recommendationGenerationTaskPayloadSchema,
+  recommendationGenerationTaskResponseSchema,
   type CloudTaskSmokeResponse,
   type FinancialAnalysisTaskResponse,
   type HealthResponse,
   type PlaidSyncTaskResponse,
+  type RecommendationGenerationTaskResponse,
 } from '@hidmo/contracts'
 import { checkDatabase, type createDatabasePool } from '@hidmo/database'
 import type { Logger } from '@hidmo/logging'
@@ -39,6 +42,20 @@ type ServerDependencies = {
     inputHash: string
     formulaVersion: string
   }>
+  recommendations?: (input: {
+    userId: string
+    period: {
+      startDate: string
+      endDate: string
+      label?: string
+    }
+  }) => Promise<{
+    status: 'generated' | 'reused' | 'no_candidates'
+    inputHash: string
+    formulaVersion: string
+    policyVersion: string
+    recommendationCount: number
+  }>
   logger: Logger
   plaidSync?: (input: {
     userId: string
@@ -56,11 +73,13 @@ type ServerDependencies = {
   taskExecutions?: {
     claim(input: {
       id: string
+      userId?: string
       idempotencyKey: string
       operation: string
       schemaVersion: number
     }): Promise<boolean>
     complete(id: string): Promise<void>
+    fail?(id: string, errorCode: string, attemptCount: number): Promise<void>
   }
 }
 
@@ -71,6 +90,7 @@ type WorkerResponse = {
     | CloudTaskSmokeResponse
     | FinancialAnalysisTaskResponse
     | PlaidSyncTaskResponse
+    | RecommendationGenerationTaskResponse
     | { error: string }
 }
 
@@ -82,6 +102,7 @@ function sendJson(
     | CloudTaskSmokeResponse
     | FinancialAnalysisTaskResponse
     | PlaidSyncTaskResponse
+    | RecommendationGenerationTaskResponse
     | { error: string },
 ) {
   response.writeHead(statusCode, {
@@ -288,6 +309,96 @@ async function handleFinancialAnalysisTask(
   }
 }
 
+async function handleRecommendationGenerationTask(
+  bodyText: string | undefined,
+  headers: Record<string, string | string[] | undefined> | undefined,
+  { allowedTaskQueues, recommendations, taskExecutions }: ServerDependencies,
+): Promise<WorkerResponse> {
+  if (recommendations === undefined) {
+    return {
+      statusCode: 503,
+      body: { error: 'recommendations_unavailable' },
+    }
+  }
+  if (taskExecutions === undefined) {
+    return { statusCode: 503, body: { error: 'task_repository_unavailable' } }
+  }
+
+  const validation = validateCloudTasksRequest(headers, allowedTaskQueues)
+  if (!validation.ok) return validation.response
+
+  const parsed = recommendationGenerationTaskPayloadSchema.safeParse(
+    bodyText === undefined || bodyText.length === 0
+      ? undefined
+      : JSON.parse(bodyText),
+  )
+  if (!parsed.success) {
+    return { statusCode: 400, body: { error: 'invalid_task_payload' } }
+  }
+
+  const taskExecutionId = randomUUID()
+  const claimed = await taskExecutions.claim({
+    id: taskExecutionId,
+    userId: parsed.data.userId,
+    idempotencyKey: parsed.data.idempotencyKey,
+    operation: parsed.data.operation,
+    schemaVersion: parsed.data.schemaVersion,
+  })
+
+  const period = {
+    startDate: parsed.data.period.startDate,
+    endDate: parsed.data.period.endDate,
+    ...(parsed.data.period.label === undefined
+      ? {}
+      : { label: parsed.data.period.label }),
+  }
+
+  if (!claimed) {
+    return {
+      statusCode: 200,
+      body: recommendationGenerationTaskResponseSchema.parse({
+        status: 'duplicate',
+        operation: parsed.data.operation,
+        userId: parsed.data.userId,
+        period,
+        idempotencyKey: parsed.data.idempotencyKey,
+        taskName: validation.taskName,
+      }),
+    }
+  }
+
+  try {
+    const result = await recommendations({
+      userId: parsed.data.userId,
+      period,
+    })
+    await taskExecutions.complete(taskExecutionId)
+
+    return {
+      statusCode: 200,
+      body: recommendationGenerationTaskResponseSchema.parse({
+        status: result.status,
+        operation: parsed.data.operation,
+        userId: parsed.data.userId,
+        period,
+        idempotencyKey: parsed.data.idempotencyKey,
+        taskName: validation.taskName,
+        inputHash: result.inputHash,
+        formulaVersion: result.formulaVersion,
+        policyVersion: result.policyVersion,
+        recommendationCount: result.recommendationCount,
+      }),
+    }
+  } catch (error) {
+    await taskExecutions.fail?.(
+      taskExecutionId,
+      'RECOMMENDATION_TASK_FAILED',
+      1,
+    )
+    throw error
+  }
+}
+
 export async function getWorkerResponse(
   method: string | undefined,
   path: string | undefined,
@@ -373,6 +484,25 @@ export async function getWorkerResponse(
       return {
         statusCode: 500,
         body: { error: 'financial_analysis_task_failed' },
+      }
+    }
+  }
+
+  if (method === 'POST' && path === '/tasks/recommendations') {
+    try {
+      return await handleRecommendationGenerationTask(
+        request?.bodyText,
+        request?.headers,
+        dependencies,
+      )
+    } catch (error) {
+      logger.error(
+        { err: error },
+        'worker recommendation generation task failed',
+      )
+      return {
+        statusCode: 500,
+        body: { error: 'recommendation_generation_task_failed' },
       }
     }
   }

@@ -18,6 +18,7 @@ COPY packages/classification/package.json packages/classification/package.json
 COPY packages/config/package.json packages/config/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/database/package.json packages/database/package.json
+COPY packages/export/package.json packages/export/package.json
 COPY packages/finance-engine/package.json packages/finance-engine/package.json
 COPY packages/logging/package.json packages/logging/package.json
 COPY packages/plaid/package.json packages/plaid/package.json

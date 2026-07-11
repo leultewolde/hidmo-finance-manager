@@ -688,6 +688,199 @@ li {
   color: #ff9e8f !important;
 }
 
+.recommendationsSection {
+  margin-top: 72px;
+  padding-top: 64px;
+  border-top: 1px solid #30362d;
+}
+
+.recommendationSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.recommendationSummaryGrid article,
+.recommendationItem article,
+.recommendationDisclaimer {
+  padding: 24px;
+  border: 1px solid #30362d;
+  border-radius: 16px;
+  background: rgb(255 255 255 / 2%);
+}
+
+.recommendationSummaryGrid article {
+  display: grid;
+  gap: 10px;
+}
+
+.recommendationSummaryGrid span,
+.recommendationFacts span,
+.recommendationDetails li span,
+.recommendationFooter p {
+  color: #8d9789;
+}
+
+.recommendationSummaryGrid strong {
+  font-size: 1.25rem;
+}
+
+.recommendationSummaryGrid p,
+.recommendationHeader p,
+.recommendationDetails p,
+.recommendationDisclaimer {
+  margin: 0;
+  color: #adb5aa;
+  line-height: 1.65;
+}
+
+.recommendationList {
+  display: grid;
+  gap: 18px;
+  margin: 32px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recommendationItem {
+  display: block;
+  grid-template-columns: none;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.recommendationItem-high article {
+  border-color: rgb(255 158 143 / 34%);
+}
+
+.recommendationItem-medium article {
+  border-color: rgb(242 207 118 / 34%);
+}
+
+.recommendationHeader,
+.recommendationFooter {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.recommendationHeader h3 {
+  margin: 8px 0 12px;
+  font-size: 1.45rem;
+  letter-spacing: -0.025em;
+}
+
+.recommendationStatus {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: 1px solid #30362d;
+  border-radius: 999px;
+  color: #d5d9d1;
+  font-size: 0.8rem;
+}
+
+.recommendationStatus-active,
+.recommendationStatus-candidate {
+  border-color: rgb(166 206 120 / 34%);
+  color: #a6ce78;
+}
+
+.recommendationStatus-accepted {
+  border-color: rgb(86 156 214 / 42%);
+  color: #9ccaff;
+}
+
+.recommendationStatus-dismissed {
+  border-color: rgb(141 151 137 / 34%);
+  color: #8d9789;
+}
+
+.recommendationFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.recommendationFacts span {
+  padding: 7px 10px;
+  border: 1px solid #30362d;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 12%);
+  font-size: 0.82rem;
+}
+
+.recommendationDetails {
+  margin-top: 20px;
+}
+
+.recommendationDetails summary {
+  color: #f6f3eb;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.recommendationDetailsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 16px;
+}
+
+.recommendationDetails h4 {
+  margin: 0 0 10px;
+}
+
+.recommendationDetails ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recommendationDetails li {
+  display: grid;
+  grid-template-columns: none;
+  gap: 4px;
+  padding: 12px 0;
+  border-bottom: 1px solid #30362d;
+}
+
+.recommendationDetails li:last-child {
+  border-bottom: 0;
+}
+
+.recommendationDetails li span {
+  font-family: inherit;
+  font-size: 0.84rem;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.recommendationFooter {
+  align-items: center;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid #30362d;
+}
+
+.recommendationFooter p {
+  font-size: 0.86rem;
+}
+
+.recommendationFooter div {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.recommendationDisclaimer {
+  margin-top: 24px;
+}
+
 .classificationSummary {
   margin-top: 72px;
   padding-top: 64px;
@@ -1125,14 +1318,18 @@ li {
 
   .connectionsHeading,
   .connectionCardHeader,
-  .analysisHeader {
+  .analysisHeader,
+  .recommendationHeader,
+  .recommendationFooter {
     flex-direction: column;
   }
 
   .summaryGrid,
   .analysisStatusGrid,
   .analysisMetricGrid,
-  .analysisNarrativeGrid {
+  .analysisNarrativeGrid,
+  .recommendationSummaryGrid,
+  .recommendationDetailsGrid {
     grid-template-columns: 1fr;
   }
 

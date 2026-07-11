@@ -9,8 +9,13 @@ import {
   type ConnectionView,
 } from './plaid-connection-manager'
 import { AnalysisCard, type AnalysisSnapshotView } from './analysis-card'
+import {
+  RecommendationCard,
+  type RecommendationView,
+} from './recommendation-card'
 import { ReviewQueue } from './review-queue'
 import { SignOutButton } from './sign-out-button'
+import { serializeRecommendationView } from '../../lib/recommendation-view'
 
 export const dynamic = 'force-dynamic'
 
@@ -323,16 +328,21 @@ export default async function DashboardPage() {
       year: 'numeric',
     }).format(new Date(`${monthStart}T00:00:00.000Z`)),
   }
-  const [latestAnalysisSnapshot, latestAnalysisJob] = await Promise.all([
-    ownerContext.repositories.analysisSnapshots.getLatestForUserPeriod(
-      ownerContext.databaseOwner.id,
-      analysisPeriod,
-    ),
-    ownerContext.repositories.analysisJobs.getLatestForUserPeriod(
-      ownerContext.databaseOwner.id,
-      analysisPeriod,
-    ),
-  ])
+  const [latestAnalysisSnapshot, latestAnalysisJob, currentRecommendations] =
+    await Promise.all([
+      ownerContext.repositories.analysisSnapshots.getLatestForUserPeriod(
+        ownerContext.databaseOwner.id,
+        analysisPeriod,
+      ),
+      ownerContext.repositories.analysisJobs.getLatestForUserPeriod(
+        ownerContext.databaseOwner.id,
+        analysisPeriod,
+      ),
+      ownerContext.repositories.recommendations.listCurrentForUserPeriod(
+        ownerContext.databaseOwner.id,
+        analysisPeriod,
+      ),
+    ])
   const usdTransactions = transactionDetails.transactions.filter(
     (transaction) => transaction.currency === 'USD',
   )
@@ -420,6 +430,15 @@ export default async function DashboardPage() {
                   latestAnalysisSnapshot.deterministicSummary,
                 ),
               }
+        }
+      />
+
+      <RecommendationCard
+        currentPeriod={analysisPeriod}
+        initialRecommendations={
+          currentRecommendations.map(
+            serializeRecommendationView,
+          ) as RecommendationView[]
         }
       />
 

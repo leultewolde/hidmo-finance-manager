@@ -498,6 +498,10 @@ Completion gate:
 **Outcome:** the system is safe enough to request Plaid Production access and
 connect the owner's real accounts.
 
+See the dedicated
+[production readiness implementation DAG](./production-readiness-implementation-dag.md)
+for work drivers, dependencies, PR sequence, and production connection gates.
+
 Implementation work:
 
 1. Build CSV export.

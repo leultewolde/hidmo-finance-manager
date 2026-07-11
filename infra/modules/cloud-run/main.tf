@@ -98,6 +98,14 @@ resource "google_cloud_run_v2_service" "web" {
       dynamic "env" {
         for_each = var.web_cloud_tasks_environment == null ? [] : [var.web_cloud_tasks_environment]
         content {
+          name  = "CLOUD_TASKS_DELETION_QUEUE"
+          value = env.value.deletion_queue
+        }
+      }
+
+      dynamic "env" {
+        for_each = var.web_cloud_tasks_environment == null ? [] : [var.web_cloud_tasks_environment]
+        content {
           name  = "CLOUD_TASKS_PLAID_SYNC_QUEUE"
           value = env.value.plaid_sync_queue
         }

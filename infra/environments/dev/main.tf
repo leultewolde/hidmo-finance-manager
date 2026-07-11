@@ -534,6 +534,7 @@ module "cloud_run" {
   web_cloud_tasks_environment = {
     ai_analysis_queue             = "ai-analysis"
     calculation_queue             = "calculation"
+    deletion_queue                = "deletion"
     invoker_service_account_email = module.service_accounts.emails["tasks-invoker"]
     location                      = var.region
     plaid_sync_queue              = "plaid-sync"

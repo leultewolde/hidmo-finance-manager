@@ -11,6 +11,7 @@ const commonEnvironmentSchema = z.object({
 const webEnvironmentSchema = commonEnvironmentSchema.extend({
   CLOUD_TASKS_AI_ANALYSIS_QUEUE: z.string().min(1).optional(),
   CLOUD_TASKS_CALCULATION_QUEUE: z.string().min(1).optional(),
+  CLOUD_TASKS_DELETION_QUEUE: z.string().min(1).optional(),
   CLOUD_TASKS_INVOKER_SERVICE_ACCOUNT_EMAIL: z.email().optional(),
   CLOUD_TASKS_LOCATION: z.string().min(1).optional(),
   CLOUD_TASKS_PLAID_SYNC_QUEUE: z.string().min(1).optional(),

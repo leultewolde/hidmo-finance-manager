@@ -343,21 +343,14 @@ function syncActionLabel(connection: ConnectionView, needsReconnect: boolean) {
 
 function disconnectErrorMessage(code: string | undefined) {
   switch (code) {
-    case 'TOKEN_DECRYPTION_FAILED':
-      return 'The saved Plaid connection cannot be unlocked. Restore the original LOCAL_TOKEN_ENCRYPTION_KEY, restart the app, and try again.'
-    case 'ITEM_LOGIN_REQUIRED':
-    case 'INVALID_ACCESS_TOKEN':
-    case 'ITEM_NOT_FOUND':
-      return 'Plaid no longer recognizes this connection. Its local data must be removed before reconnecting.'
     case 'CONNECTION_NOT_FOUND':
       return 'This connection is no longer available. Refresh the dashboard before trying again.'
-    case 'INTERNAL_SERVER_ERROR':
-    case 'RATE_LIMIT_EXCEEDED':
-      return 'Plaid could not disconnect the institution temporarily. Wait a minute, then try again.'
+    case 'TASK_ENQUEUE_FAILED':
+      return 'The deletion task could not be queued. Wait a minute, then try again.'
     default:
       return code === undefined
-        ? 'The institution could not be disconnected.'
-        : `The institution could not be disconnected. Plaid error: ${code}.`
+        ? 'The institution deletion could not be queued.'
+        : `The institution deletion could not be queued. Error: ${code}.`
   }
 }
 
@@ -435,12 +428,14 @@ export function PlaidConnectionManager({
 
   async function disconnect(connectionId: string) {
     if (
-      !window.confirm('Disconnect this institution and remove its accounts?')
+      !window.confirm(
+        'Queue deletion for this institution? This revokes Plaid access and removes the connected accounts after the worker finishes.',
+      )
     ) {
       return
     }
     setWorking(true)
-    setStatus('Revoking Plaid access…')
+    setStatus('Queueing institution deletion…')
     try {
       const csrfToken = await requestCsrfToken()
       const response = await fetch(`/api/connections/${connectionId}`, {
@@ -449,16 +444,27 @@ export function PlaidConnectionManager({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ csrfToken }),
       })
+      const body = (await response.json().catch(() => ({}))) as {
+        code?: string
+        deletionRequestId?: string
+        status?: string
+      }
       if (!response.ok) {
-        const body = (await response.json().catch(() => ({}))) as {
-          code?: string
-        }
         throw new Error(disconnectErrorMessage(body.code))
       }
-      window.location.reload()
+      setStatus(
+        body.deletionRequestId === undefined
+          ? 'Institution deletion queued. Refreshing…'
+          : `Institution deletion queued (${body.deletionRequestId}). Refreshing…`,
+      )
+      window.setTimeout(() => window.location.reload(), 1500)
     } catch (error) {
       setWorking(false)
-      setStatus(error instanceof Error ? error.message : 'Disconnect failed.')
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : 'Deletion could not be queued.',
+      )
     }
   }
 
@@ -636,7 +642,7 @@ function ConnectionCard({
             onClick={() => disconnect(connection.id)}
             type="button"
           >
-            {needsReconnect ? 'Remove connection' : 'Disconnect'}
+            {needsReconnect ? 'Queue removal' : 'Delete connection'}
           </button>
         </div>
       </div>

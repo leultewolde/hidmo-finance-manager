@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 import { createLogger } from '@hidmo/logging'
-import { TokenDecryptionError } from '@hidmo/plaid'
 
 import {
   getLocalTokenWrappingKey,
@@ -50,7 +49,7 @@ export async function DELETE(
 
     const { connectionId } = await context.params
     const { databaseOwner, repositories } = await requireDatabaseOwner()
-    await disconnectPlaidItem({
+    const result = await disconnectPlaidItem({
       userId: databaseOwner.id,
       connectionId,
       provider: getPlaidProvider(),
@@ -58,14 +57,32 @@ export async function DELETE(
       wrappingKey: getLocalTokenWrappingKey(),
     })
 
-    logger.info({ connectionId }, 'Plaid connection disconnected')
-    return NextResponse.json({ disconnected: true })
+    logger.info(
+      {
+        connectionId,
+        plaidItemRevoked: result.plaidItemRevoked,
+        localTokenDestroyed: result.localTokenDestroyed,
+        plaidErrorCode: result.plaidErrorCode,
+        tokenErrorCode: result.tokenErrorCode,
+      },
+      'Plaid connection disconnected',
+    )
+    return NextResponse.json({
+      disconnected: true,
+      plaidItemRevoked: result.plaidItemRevoked,
+      localTokenDestroyed: result.localTokenDestroyed,
+      ...(result.plaidErrorCode === undefined
+        ? {}
+        : { plaidErrorCode: result.plaidErrorCode }),
+      ...(result.tokenErrorCode === undefined
+        ? {}
+        : { tokenErrorCode: result.tokenErrorCode }),
+    })
   } catch (error) {
     if (error instanceof AuthFailure) {
       return NextResponse.json({ error: error.code }, { status: error.status })
     }
-    const code =
-      error instanceof TokenDecryptionError ? error.name : plaidErrorCode(error)
+    const code = plaidErrorCode(error)
     logger.error(
       {
         errorCode: code,

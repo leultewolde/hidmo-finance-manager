@@ -1,10 +1,10 @@
 import {
-  decryptAccessToken,
   encryptAccessToken,
   normalizePlaidAccount,
   type PlaidProvider,
   type TokenEnvelope,
 } from '@hidmo/plaid'
+import { revokePlaidConnectionForDeletion } from '@hidmo/sync'
 
 interface ConnectionPersistence {
   createPlaidConnection(input: {
@@ -86,34 +86,11 @@ export async function disconnectPlaidItem(input: {
   persistence: ConnectionPersistence
   wrappingKey: Buffer
 }) {
-  const connection = await input.persistence.getTokenEnvelopeForUser(
-    input.userId,
-    input.connectionId,
-  )
-  if (
-    connection === undefined ||
-    connection.encryptedAccessToken === null ||
-    connection.wrappedDataKey === null ||
-    connection.encryptionNonce === null ||
-    connection.encryptionTag === null ||
-    connection.encryptionAlgorithm === null ||
-    connection.kmsKeyName === null
-  ) {
-    throw new Error('Connection not found for owner')
-  }
-
-  const accessToken = decryptAccessToken(
-    {
-      encryptedAccessToken: connection.encryptedAccessToken,
-      wrappedDataKey: connection.wrappedDataKey,
-      encryptionNonce: connection.encryptionNonce,
-      encryptionTag: connection.encryptionTag,
-      encryptionAlgorithm: connection.encryptionAlgorithm,
-      kmsKeyName: connection.kmsKeyName,
-    },
-    input.wrappingKey,
-  )
-
-  await input.provider.removeItem(accessToken)
-  await input.persistence.revokeForUser(input.userId, input.connectionId)
+  return revokePlaidConnectionForDeletion({
+    userId: input.userId,
+    connectionId: input.connectionId,
+    provider: input.provider,
+    repositories: { connections: input.persistence },
+    wrappingKey: input.wrappingKey,
+  })
 }

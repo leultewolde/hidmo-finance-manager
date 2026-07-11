@@ -51,6 +51,7 @@ import {
   budgets,
   classificationRules,
   connections,
+  deletionRequests,
   institutions,
   liabilities,
   metricSnapshots,
@@ -2672,6 +2673,178 @@ export class SyncJobRepository {
   }
 }
 
+export class DeletionRequestRepository {
+  constructor(private readonly db: Database) {}
+
+  async createUserRequest(input: {
+    id: string
+    userId: string
+    idempotencyKey: string
+    requestedBy?: string
+    auditMetadata?: JsonObject
+  }) {
+    return this.createRequest({
+      ...input,
+      scope: 'user',
+      connectionId: null,
+    })
+  }
+
+  async createConnectionRequest(input: {
+    id: string
+    userId: string
+    connectionId: string
+    idempotencyKey: string
+    requestedBy?: string
+    auditMetadata?: JsonObject
+  }) {
+    const [connection] = await this.db
+      .select({ id: connections.id })
+      .from(connections)
+      .where(
+        and(
+          eq(connections.id, input.connectionId),
+          eq(connections.userId, input.userId),
+        ),
+      )
+      .limit(1)
+
+    if (connection === undefined) {
+      throw new Error('Connection does not belong to user')
+    }
+
+    return this.createRequest({
+      ...input,
+      scope: 'connection',
+    })
+  }
+
+  async markRunning(id: string) {
+    const [updated] = await this.db
+      .update(deletionRequests)
+      .set({
+        status: 'running',
+        startedAt: new Date(),
+        attemptCount: sql`${deletionRequests.attemptCount} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(deletionRequests.id, id))
+      .returning()
+
+    return updated
+  }
+
+  async markSucceeded(id: string, auditMetadata: JsonObject = {}) {
+    const [updated] = await this.db
+      .update(deletionRequests)
+      .set({
+        status: 'succeeded',
+        completedAt: new Date(),
+        lastErrorCode: null,
+        auditMetadata,
+        updatedAt: new Date(),
+      })
+      .where(eq(deletionRequests.id, id))
+      .returning()
+
+    return updated
+  }
+
+  async markFailed(
+    id: string,
+    errorCode: string,
+    auditMetadata: JsonObject = {},
+  ) {
+    const [updated] = await this.db
+      .update(deletionRequests)
+      .set({
+        status: 'failed',
+        completedAt: new Date(),
+        lastErrorCode: errorCode,
+        auditMetadata,
+        updatedAt: new Date(),
+      })
+      .where(eq(deletionRequests.id, id))
+      .returning()
+
+    return updated
+  }
+
+  async getByIdForUser(userId: string, id: string) {
+    const [request] = await this.db
+      .select()
+      .from(deletionRequests)
+      .where(
+        and(eq(deletionRequests.id, id), eq(deletionRequests.userId, userId)),
+      )
+      .limit(1)
+
+    return request
+  }
+
+  async listRecentForUser(userId: string, limit = 20) {
+    return this.db
+      .select()
+      .from(deletionRequests)
+      .where(eq(deletionRequests.userId, userId))
+      .orderBy(desc(deletionRequests.createdAt))
+      .limit(limit)
+  }
+
+  private async createRequest(input: {
+    id: string
+    userId: string
+    connectionId: string | null
+    scope: 'user' | 'connection'
+    idempotencyKey: string
+    requestedBy?: string
+    auditMetadata?: JsonObject
+  }) {
+    return this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(deletionRequests)
+        .values({
+          id: input.id,
+          userId: input.userId,
+          connectionId: input.connectionId,
+          scope: input.scope,
+          status: 'queued',
+          idempotencyKey: input.idempotencyKey,
+          requestedBy: input.requestedBy ?? 'owner',
+          auditMetadata: input.auditMetadata ?? {},
+        })
+        .onConflictDoNothing({
+          target: deletionRequests.idempotencyKey,
+        })
+        .returning()
+
+      if (created !== undefined) {
+        return created
+      }
+
+      const [existing] = await tx
+        .select()
+        .from(deletionRequests)
+        .where(eq(deletionRequests.idempotencyKey, input.idempotencyKey))
+        .limit(1)
+
+      if (existing === undefined) {
+        throw new Error('Deletion request idempotency lookup failed')
+      }
+
+      if (
+        existing.userId !== input.userId ||
+        existing.connectionId !== input.connectionId ||
+        existing.scope !== input.scope
+      ) {
+        throw new Error('Deletion request idempotency key conflict')
+      }
+
+      return existing
+    })
+  }
+}
+
 export interface PlaidTransactionInput {
   providerTransactionId: string
   providerAccountId: string
@@ -2709,5 +2882,6 @@ export function createRepositories(db: Database) {
     exports: new ExportRepository(db),
     taskExecutions: new TaskExecutionRepository(db),
     syncJobs: new SyncJobRepository(db),
+    deletionRequests: new DeletionRequestRepository(db),
   }
 }

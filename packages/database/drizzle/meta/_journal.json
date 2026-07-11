@@ -43,6 +43,13 @@
       "when": 1783290194950,
       "tag": "0005_conscious_loa",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783803938552,
+      "tag": "0006_deep_mad_thinker",
+      "breakpoints": true
     }
   ]
 }

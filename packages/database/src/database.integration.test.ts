@@ -19,6 +19,7 @@ import { createRepositories } from './repositories.js'
 import {
   accounts,
   connections,
+  deletionRequests,
   transactionSplits,
   transactions,
   users,
@@ -67,6 +68,7 @@ describe('database migrations and synthetic seed', () => {
       'budgets',
       'classification_rules',
       'connections',
+      'deletion_requests',
       'goals',
       'institutions',
       'liabilities',
@@ -790,6 +792,108 @@ describe('database constraints and transactions', () => {
     await expect(
       repositories.taskExecutions.claim({ ...input, id: randomUUID() }),
     ).resolves.toBe(false)
+  })
+
+  it('tracks deletion requests idempotently without storing financial payloads', async () => {
+    const requestId = randomUUID()
+    const idempotencyKey = `delete-user:${randomUUID()}`
+
+    const created = await repositories.deletionRequests.createUserRequest({
+      id: requestId,
+      userId: syntheticIds.user,
+      idempotencyKey,
+      auditMetadata: { reason: 'integration-test' },
+    })
+    expect(created).toMatchObject({
+      id: requestId,
+      userId: syntheticIds.user,
+      connectionId: null,
+      scope: 'user',
+      status: 'queued',
+      requestedBy: 'owner',
+      attemptCount: 0,
+      auditMetadata: { reason: 'integration-test' },
+    })
+
+    const duplicate = await repositories.deletionRequests.createUserRequest({
+      id: randomUUID(),
+      userId: syntheticIds.user,
+      idempotencyKey,
+    })
+    expect(duplicate.id).toBe(requestId)
+
+    await expect(
+      repositories.deletionRequests.createConnectionRequest({
+        id: randomUUID(),
+        userId: syntheticIds.user,
+        connectionId: syntheticIds.connection,
+        idempotencyKey,
+      }),
+    ).rejects.toThrow('Deletion request idempotency key conflict')
+
+    const running = await repositories.deletionRequests.markRunning(requestId)
+    expect(running).toMatchObject({
+      id: requestId,
+      status: 'running',
+      attemptCount: 1,
+    })
+    expect(running?.startedAt).toBeInstanceOf(Date)
+
+    const succeeded = await repositories.deletionRequests.markSucceeded(
+      requestId,
+      { revokedPlaidItem: true, destroyedToken: true },
+    )
+    expect(succeeded).toMatchObject({
+      id: requestId,
+      status: 'succeeded',
+      lastErrorCode: null,
+      auditMetadata: { revokedPlaidItem: true, destroyedToken: true },
+    })
+    expect(succeeded?.completedAt).toBeInstanceOf(Date)
+
+    const [stored] = await db
+      .select()
+      .from(deletionRequests)
+      .where(eq(deletionRequests.id, requestId))
+    expect(stored).toMatchObject({
+      id: requestId,
+      status: 'succeeded',
+    })
+  })
+
+  it('requires connection deletion requests to target a connection owned by the user', async () => {
+    const request = await repositories.deletionRequests.createConnectionRequest(
+      {
+        id: randomUUID(),
+        userId: syntheticIds.user,
+        connectionId: syntheticIds.connection,
+        idempotencyKey: `delete-connection:${randomUUID()}`,
+        auditMetadata: { targetType: 'connection' },
+      },
+    )
+
+    expect(request).toMatchObject({
+      userId: syntheticIds.user,
+      connectionId: syntheticIds.connection,
+      scope: 'connection',
+      status: 'queued',
+      auditMetadata: { targetType: 'connection' },
+    })
+
+    await expect(
+      repositories.deletionRequests.createConnectionRequest({
+        id: randomUUID(),
+        userId: syntheticIds.user,
+        connectionId: randomUUID(),
+        idempotencyKey: `delete-connection:${randomUUID()}`,
+      }),
+    ).rejects.toThrow('Connection does not belong to user')
+
+    const [listed] = await repositories.deletionRequests.listRecentForUser(
+      syntheticIds.user,
+      1,
+    )
+    expect(listed?.id).toBe(request.id)
   })
 
   it('tracks Plaid sync job lifecycle for dashboard status', async () => {

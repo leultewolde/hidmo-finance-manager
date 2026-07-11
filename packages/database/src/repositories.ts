@@ -2806,6 +2806,23 @@ export class DeletionRequestRepository {
     return request
   }
 
+  async findActiveUserRequestForUser(userId: string) {
+    const [request] = await this.db
+      .select()
+      .from(deletionRequests)
+      .where(
+        and(
+          eq(deletionRequests.userId, userId),
+          eq(deletionRequests.scope, 'user'),
+          inArray(deletionRequests.status, ['queued', 'running']),
+        ),
+      )
+      .orderBy(desc(deletionRequests.createdAt))
+      .limit(1)
+
+    return request
+  }
+
   async listRecentForUser(userId: string, limit = 20) {
     return this.db
       .select()

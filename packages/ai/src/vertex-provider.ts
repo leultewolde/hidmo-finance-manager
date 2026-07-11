@@ -242,6 +242,7 @@ export function createVertexRecommendationGroundingProvider(
     async rankAndExplain(
       request: RecommendationGroundingRequest,
     ): Promise<RecommendationGroundingResult> {
+      const startedAt = Date.now()
       const prompt = buildRecommendationGroundingPrompt(request)
       const accessToken = await accessTokenProvider()
       const response = await fetchImplementation(url, {
@@ -302,6 +303,7 @@ export function createVertexRecommendationGroundingProvider(
             JSON.stringify({ recommendations }),
             'utf8',
           ),
+          latencyMs: Date.now() - startedAt,
           ...usageMetadata(vertexResponse),
         }),
       }

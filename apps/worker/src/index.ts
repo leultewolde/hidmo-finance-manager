@@ -21,6 +21,7 @@ import { createPlaidProvider, parseLocalWrappingKey } from '@hidmo/plaid'
 import {
   plaidErrorCode,
   processConnectionDeletionTask,
+  processUserDeletionTask,
   refreshClassifications,
   synchronizePlaidConnection,
 } from '@hidmo/sync'
@@ -127,6 +128,28 @@ const server = createWorkerServer({
         tokenErrorCode: result.tokenErrorCode,
       },
       'Connection deletion completed by worker',
+    )
+    return result
+  },
+  userDeletion: async ({ userId, deletionRequestId }) => {
+    const result = await processUserDeletionTask({
+      userId,
+      deletionRequestId,
+      provider,
+      repositories,
+      wrappingKey,
+    })
+    logger.info(
+      {
+        userId,
+        deletionRequestId,
+        status: result.status,
+        revokedConnectionCount: result.revokedConnectionCount,
+        localTokenDestroyedCount: result.localTokenDestroyedCount,
+        failedConnectionCount: result.failedConnectionCount,
+        userDeleted: result.userDeleted,
+      },
+      'User deletion completed by worker',
     )
     return result
   },

@@ -7,6 +7,7 @@ import { encryptAccessToken, type PlaidProvider } from '@hidmo/plaid'
 import {
   DeletionRequestMismatchError,
   processConnectionDeletionTask,
+  processUserDeletionTask,
 } from './deletion-task.js'
 
 function createProvider(removeItem = vi.fn().mockResolvedValue(undefined)) {
@@ -31,7 +32,13 @@ function createRepositories(input: {
   tokenEnvelope?: ReturnType<typeof encryptAccessToken>
 }) {
   return {
+    users: {
+      deleteById: vi.fn().mockResolvedValue(true),
+    },
     connections: {
+      listDeletionTargetsForUser: vi
+        .fn()
+        .mockResolvedValue([{ id: '00000000-0000-4000-8000-000000000002' }]),
       getTokenEnvelopeForUser: vi.fn().mockResolvedValue(
         input.tokenEnvelope === undefined
           ? undefined
@@ -43,6 +50,7 @@ function createRepositories(input: {
       revokeForUser: vi.fn().mockResolvedValue(undefined),
     },
     deletionRequests: {
+      getById: vi.fn().mockResolvedValue(input.request),
       getByIdForUser: vi.fn().mockResolvedValue(input.request),
       markRunning: vi.fn().mockResolvedValue({
         ...input.request,
@@ -65,6 +73,14 @@ const request = {
   userId: '00000000-0000-4000-8000-000000000001',
   connectionId: '00000000-0000-4000-8000-000000000002',
   scope: 'connection' as const,
+  status: 'queued' as const,
+}
+
+const userRequest = {
+  id: '00000000-0000-4000-8000-000000000004',
+  userId: '00000000-0000-4000-8000-000000000001',
+  connectionId: null,
+  scope: 'user' as const,
   status: 'queued' as const,
 }
 
@@ -184,5 +200,131 @@ describe('connection deletion task processing', () => {
         connectionId: request.connectionId,
       }),
     )
+  })
+})
+
+describe('user deletion task processing', () => {
+  it('revokes all user connections before deleting the user', async () => {
+    const wrappingKey = randomBytes(32)
+    const repositories = createRepositories({
+      request: userRequest,
+      tokenEnvelope: encryptAccessToken('access-token-secret', wrappingKey),
+    })
+    repositories.connections.listDeletionTargetsForUser.mockResolvedValue([
+      { id: '00000000-0000-4000-8000-000000000002' },
+      { id: '00000000-0000-4000-8000-000000000005' },
+    ])
+    const provider = createProvider()
+
+    await expect(
+      processUserDeletionTask({
+        userId: userRequest.userId,
+        deletionRequestId: userRequest.id,
+        provider,
+        repositories,
+        wrappingKey,
+      }),
+    ).resolves.toEqual({
+      status: 'completed',
+      revokedConnectionCount: 2,
+      localTokenDestroyedCount: 2,
+      failedConnectionCount: 0,
+      userDeleted: true,
+    })
+
+    expect(provider.removeItem).toHaveBeenCalledTimes(2)
+    expect(repositories.connections.revokeForUser).toHaveBeenCalledWith(
+      userRequest.userId,
+      '00000000-0000-4000-8000-000000000002',
+    )
+    expect(repositories.connections.revokeForUser).toHaveBeenCalledWith(
+      userRequest.userId,
+      '00000000-0000-4000-8000-000000000005',
+    )
+    expect(repositories.users.deleteById).toHaveBeenCalledWith(
+      userRequest.userId,
+    )
+    expect(repositories.deletionRequests.markSucceeded).toHaveBeenCalledWith(
+      userRequest.id,
+      expect.objectContaining({
+        scope: 'user',
+        revokedConnectionCount: 2,
+        localTokenDestroyedCount: 2,
+        failedConnectionCount: 0,
+        userDeleted: true,
+      }),
+    )
+  })
+
+  it('treats an already-succeeded user deletion request as idempotent completion', async () => {
+    const repositories = createRepositories({
+      request: { ...userRequest, userId: null, status: 'succeeded' },
+    })
+
+    await expect(
+      processUserDeletionTask({
+        userId: userRequest.userId,
+        deletionRequestId: userRequest.id,
+        provider: createProvider(),
+        repositories,
+        wrappingKey: randomBytes(32),
+      }),
+    ).resolves.toEqual({
+      status: 'already_completed',
+      revokedConnectionCount: 0,
+      localTokenDestroyedCount: 0,
+      failedConnectionCount: 0,
+      userDeleted: true,
+    })
+
+    expect(repositories.deletionRequests.markRunning).not.toHaveBeenCalled()
+    expect(repositories.users.deleteById).not.toHaveBeenCalled()
+  })
+
+  it('rejects user deletion task payloads for connection deletion requests', async () => {
+    const repositories = createRepositories({ request })
+
+    await expect(
+      processUserDeletionTask({
+        userId: request.userId,
+        deletionRequestId: request.id,
+        provider: createProvider(),
+        repositories,
+        wrappingKey: randomBytes(32),
+      }),
+    ).rejects.toBeInstanceOf(DeletionRequestMismatchError)
+
+    expect(repositories.deletionRequests.markRunning).not.toHaveBeenCalled()
+  })
+
+  it('marks the user deletion request failed when local cleanup fails', async () => {
+    const wrappingKey = randomBytes(32)
+    const repositories = createRepositories({
+      request: userRequest,
+      tokenEnvelope: encryptAccessToken('access-token-secret', wrappingKey),
+    })
+    repositories.connections.revokeForUser.mockRejectedValue(
+      new Error('database unavailable'),
+    )
+
+    await expect(
+      processUserDeletionTask({
+        userId: userRequest.userId,
+        deletionRequestId: userRequest.id,
+        provider: createProvider(),
+        repositories,
+        wrappingKey,
+      }),
+    ).rejects.toThrow('database unavailable')
+
+    expect(repositories.deletionRequests.markFailed).toHaveBeenCalledWith(
+      userRequest.id,
+      'Error',
+      expect.objectContaining({
+        scope: 'user',
+        userDeleted: false,
+      }),
+    )
+    expect(repositories.users.deleteById).not.toHaveBeenCalled()
   })
 })

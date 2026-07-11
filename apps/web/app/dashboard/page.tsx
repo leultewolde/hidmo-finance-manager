@@ -13,6 +13,7 @@ import {
   RecommendationCard,
   type RecommendationView,
 } from './recommendation-card'
+import { ExportCard } from './export-card'
 import { ReviewQueue } from './review-queue'
 import { SignOutButton } from './sign-out-button'
 import { serializeRecommendationView } from '../../lib/recommendation-view'
@@ -441,6 +442,8 @@ export default async function DashboardPage() {
           ) as RecommendationView[]
         }
       />
+
+      <ExportCard />
 
       <section className="classificationSummary">
         <p className="sectionLabel">Current month</p>

@@ -31,6 +31,15 @@ import {
   assertTransactionSplits,
   validateRecommendationCandidate,
 } from '@hidmo/finance-engine'
+import type {
+  ExportAnalysisSnapshotRow,
+  ExportBudgetRow,
+  ExportClassificationRuleRow,
+  ExportConnectionRow,
+  ExportManualLoanRow,
+  ExportRecommendationRow,
+  FinanceExportData,
+} from '@hidmo/export'
 
 import type { Database } from './client.js'
 import {
@@ -55,6 +64,25 @@ import {
 } from './schema.js'
 
 type JsonObject = Record<string, unknown>
+
+function asJsonObject(value: unknown): JsonObject | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as JsonObject)
+    : null
+}
+
+function jsonString(value: unknown): string {
+  return JSON.stringify(value ?? null)
+}
+
+function stringMetadataField(
+  metadata: unknown,
+  field: 'provider' | 'model' | 'promptVersion',
+): string | null {
+  const record = asJsonObject(metadata)
+  const value = record?.[field]
+  return typeof value === 'string' ? value : null
+}
 
 export type RecommendationReadModel = RecommendationCandidate & {
   rowId: string
@@ -1431,6 +1459,261 @@ export class AnalysisJobRepository {
   }
 }
 
+export class ExportRepository {
+  constructor(private readonly db: Database) {}
+
+  async buildForUser(userId: string): Promise<FinanceExportData> {
+    const [
+      accountRows,
+      transactionRows,
+      splitRows,
+      classificationRuleRows,
+      liabilityRows,
+      budgetRows,
+      snapshotRows,
+      recommendationRows,
+      connectionRows,
+    ] = await Promise.all([
+      this.db
+        .select()
+        .from(accounts)
+        .where(eq(accounts.userId, userId))
+        .orderBy(asc(accounts.name), asc(accounts.id)),
+      this.db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.userId, userId))
+        .orderBy(asc(transactions.postedDate), asc(transactions.id)),
+      this.db
+        .select()
+        .from(transactionSplits)
+        .where(eq(transactionSplits.userId, userId))
+        .orderBy(
+          asc(transactionSplits.transactionId),
+          asc(transactionSplits.id),
+        ),
+      this.db
+        .select()
+        .from(classificationRules)
+        .where(eq(classificationRules.userId, userId))
+        .orderBy(
+          asc(classificationRules.priority),
+          asc(classificationRules.id),
+        ),
+      this.db
+        .select()
+        .from(liabilities)
+        .where(eq(liabilities.userId, userId))
+        .orderBy(asc(liabilities.id)),
+      this.db
+        .select({
+          id: budgets.id,
+          periodStart: budgets.periodStart,
+          periodEnd: budgets.periodEnd,
+          currency: budgets.currency,
+          rolloverEnabled: budgets.rolloverEnabled,
+          category: budgetLines.category,
+          plannedMinor: budgetLines.plannedMinor,
+          createdAt: budgetLines.createdAt,
+          updatedAt: budgetLines.updatedAt,
+        })
+        .from(budgetLines)
+        .innerJoin(budgets, eq(budgetLines.budgetId, budgets.id))
+        .where(eq(budgetLines.userId, userId))
+        .orderBy(
+          asc(budgets.periodStart),
+          asc(budgets.periodEnd),
+          asc(budgetLines.category),
+        ),
+      this.db
+        .select()
+        .from(analysisSnapshots)
+        .where(eq(analysisSnapshots.userId, userId))
+        .orderBy(asc(analysisSnapshots.periodStart), asc(analysisSnapshots.id)),
+      this.db
+        .select()
+        .from(recommendations)
+        .where(eq(recommendations.userId, userId))
+        .orderBy(
+          asc(recommendations.periodStart),
+          asc(recommendationOrderSql()),
+          asc(recommendations.rank),
+          asc(recommendations.candidateId),
+        ),
+      this.db
+        .select({
+          id: connections.id,
+          institutionName: institutions.name,
+          status: connections.status,
+          consentExpiresAt: connections.consentExpiresAt,
+          lastSuccessfulSyncAt: connections.lastSuccessfulSyncAt,
+          errorCode: connections.errorCode,
+          reconnectRequiredAt: connections.reconnectRequiredAt,
+          createdAt: connections.createdAt,
+          updatedAt: connections.updatedAt,
+        })
+        .from(connections)
+        .leftJoin(institutions, eq(connections.institutionId, institutions.id))
+        .where(eq(connections.userId, userId))
+        .orderBy(asc(connections.createdAt), asc(connections.id)),
+    ])
+
+    return {
+      accounts: accountRows.map((row) => ({
+        id: row.id,
+        connectionId: row.connectionId,
+        name: row.name,
+        kind: row.kind,
+        accountClass: row.accountClass,
+        subtype: row.subtype,
+        currency: row.currency,
+        balanceSource: row.balanceSource,
+        dataQuality: row.dataQuality,
+        active: row.active,
+        manual: row.manual,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      })),
+      accountBalances: accountRows.map((row) => ({
+        accountId: row.id,
+        currentBalanceMinor: row.currentBalanceMinor,
+        availableBalanceMinor: row.availableBalanceMinor,
+        creditLimitMinor: row.creditLimitMinor,
+        currency: row.currency,
+        balanceAsOf: row.balanceAsOf,
+      })),
+      transactions: transactionRows.map((row) => ({
+        id: row.id,
+        accountId: row.accountId,
+        authorizedDate: row.authorizedDate,
+        postedDate: row.postedDate,
+        normalizedAmountMinor: row.normalizedAmountMinor,
+        currency: row.currency,
+        merchantName: row.merchantName,
+        originalDescription: row.originalDescription,
+        state: row.state,
+        removed: row.removed,
+        economicType: row.economicType,
+        appCategory: row.appCategory,
+        classificationConfidenceBps: row.classificationConfidenceBps,
+        userReviewed: row.userReviewed,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      })),
+      transactionSplits: splitRows.map((row) => ({
+        id: row.id,
+        transactionId: row.transactionId,
+        amountMinor: row.amountMinor,
+        economicType: row.economicType,
+        category: row.category,
+        linkedLiabilityId: row.linkedLiabilityId,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+      })),
+      classificationRules: classificationRuleRows.map(
+        (row): ExportClassificationRuleRow => ({
+          id: row.id,
+          matchConditionsJson: jsonString(row.matchConditions),
+          economicType: row.economicType,
+          category: row.category,
+          priority: row.priority,
+          active: row.active,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        }),
+      ),
+      manualLoans: liabilityRows.map(
+        (row): ExportManualLoanRow => ({
+          id: row.id,
+          accountId: row.accountId,
+          kind: row.kind,
+          principalBalanceMinor: row.principalBalanceMinor,
+          aprBps: row.aprBps,
+          minimumPaymentMinor: row.minimumPaymentMinor,
+          nextDueDate: row.nextDueDate,
+          originalPrincipalMinor: row.originalPrincipalMinor,
+          termMonths: row.termMonths,
+          maturityDate: row.maturityDate,
+          source: row.source,
+          sourceUpdatedAt: row.sourceUpdatedAt?.toISOString() ?? null,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        }),
+      ),
+      budgets: budgetRows.map(
+        (row): ExportBudgetRow => ({
+          id: row.id,
+          periodStart: row.periodStart,
+          periodEnd: row.periodEnd,
+          currency: row.currency,
+          rolloverEnabled: row.rolloverEnabled,
+          category: row.category,
+          plannedMinor: row.plannedMinor,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        }),
+      ),
+      analysisSnapshots: snapshotRows.map(
+        (row): ExportAnalysisSnapshotRow => ({
+          id: row.id,
+          periodStart: row.periodStart,
+          periodEnd: row.periodEnd,
+          status: row.status,
+          inputHash: row.inputHash,
+          formulaVersion: row.formulaVersion,
+          promptVersion: null,
+          modelProvider: null,
+          modelName: null,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        }),
+      ),
+      recommendations: recommendationRows.map(
+        (row): ExportRecommendationRow => ({
+          id: row.id,
+          candidateId: row.candidateId,
+          periodStart: row.periodStart,
+          periodEnd: row.periodEnd,
+          formulaVersion: row.formulaVersion,
+          policyVersion: row.policyVersion,
+          type: row.type,
+          status: row.status,
+          priority: row.priority,
+          rank: row.rank,
+          title: row.title,
+          rationale: row.rationale,
+          evidenceIdsJson: jsonString(row.evidenceIds),
+          assumptionsJson: jsonString(row.assumptions),
+          estimatedMonthlyImpactMinor: row.estimatedMonthlyImpactMinor,
+          currency: row.currency,
+          confidenceBps: row.confidenceBps,
+          modelProvider: stringMetadataField(row.modelMetadata, 'provider'),
+          modelName: stringMetadataField(row.modelMetadata, 'model'),
+          promptVersion: stringMetadataField(
+            row.modelMetadata,
+            'promptVersion',
+          ),
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        }),
+      ),
+      connections: connectionRows.map(
+        (row): ExportConnectionRow => ({
+          id: row.id,
+          institutionName: row.institutionName,
+          status: row.status,
+          consentExpiresAt: row.consentExpiresAt?.toISOString() ?? null,
+          lastSuccessfulSyncAt: row.lastSuccessfulSyncAt?.toISOString() ?? null,
+          errorCode: row.errorCode,
+          reconnectRequiredAt: row.reconnectRequiredAt?.toISOString() ?? null,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        }),
+      ),
+    }
+  }
+}
+
 export class TransferRepository {
   constructor(private readonly db: Database) {}
 
@@ -2423,6 +2706,7 @@ export function createRepositories(db: Database) {
     analysisJobs: new AnalysisJobRepository(db),
     metrics: new MetricRepository(db),
     recommendations: new RecommendationRepository(db),
+    exports: new ExportRepository(db),
     taskExecutions: new TaskExecutionRepository(db),
     syncJobs: new SyncJobRepository(db),
   }

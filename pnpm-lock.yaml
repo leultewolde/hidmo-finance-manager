@@ -56,6 +56,9 @@ importers:
       '@hidmo/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@hidmo/export':
+        specifier: workspace:*
+        version: link:../../packages/export
       '@hidmo/finance-engine':
         specifier: workspace:*
         version: link:../../packages/finance-engine
@@ -181,6 +184,9 @@ importers:
 
   packages/database:
     dependencies:
+      '@hidmo/export':
+        specifier: workspace:*
+        version: link:../export
       '@hidmo/finance-engine':
         specifier: workspace:*
         version: link:../finance-engine

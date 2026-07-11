@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 
 import {
   cloudTaskSmokePayloadSchema,
+  connectionDeletionTaskPayloadSchema,
   financialAnalysisTaskPayloadSchema,
   plaidSyncTaskPayloadSchema,
   recommendationGenerationTaskPayloadSchema,
@@ -15,6 +16,7 @@ import { getWebEnvironment } from '@hidmo/config'
 type CloudTaskConfig = {
   aiAnalysisQueue: string
   calculationQueue: string
+  deletionQueue: string
   location: string
   plaidSyncQueue: string
   projectId: string
@@ -66,6 +68,7 @@ export function getCloudTaskConfig(): CloudTaskConfig {
       'CLOUD_TASKS_CALCULATION_QUEUE',
       environment.CLOUD_TASKS_CALCULATION_QUEUE,
     ],
+    ['CLOUD_TASKS_DELETION_QUEUE', environment.CLOUD_TASKS_DELETION_QUEUE],
     ['CLOUD_TASKS_PLAID_SYNC_QUEUE', environment.CLOUD_TASKS_PLAID_SYNC_QUEUE],
     ['CLOUD_TASKS_WORKER_URL', environment.CLOUD_TASKS_WORKER_URL],
     [
@@ -85,6 +88,7 @@ export function getCloudTaskConfig(): CloudTaskConfig {
   return {
     aiAnalysisQueue: environment.CLOUD_TASKS_AI_ANALYSIS_QUEUE!,
     calculationQueue: environment.CLOUD_TASKS_CALCULATION_QUEUE!,
+    deletionQueue: environment.CLOUD_TASKS_DELETION_QUEUE!,
     location: environment.CLOUD_TASKS_LOCATION!,
     plaidSyncQueue: environment.CLOUD_TASKS_PLAID_SYNC_QUEUE!,
     projectId: environment.FIREBASE_PROJECT_ID,
@@ -179,6 +183,34 @@ export async function enqueuePlaidSyncTask(input: {
     endpoint: '/tasks/plaid-sync',
     payload,
     queue: config.plaidSyncQueue,
+  })
+
+  return {
+    idempotencyKey: input.idempotencyKey,
+    taskName: task.name ?? '',
+  }
+}
+
+export async function enqueueConnectionDeletionTask(input: {
+  userId: string
+  connectionId: string
+  deletionRequestId: string
+  idempotencyKey: string
+}) {
+  const config = getCloudTaskConfig()
+  const payload = connectionDeletionTaskPayloadSchema.parse({
+    operation: 'deletion.connection',
+    schemaVersion: 1,
+    userId: input.userId,
+    connectionId: input.connectionId,
+    deletionRequestId: input.deletionRequestId,
+    idempotencyKey: input.idempotencyKey,
+  })
+  const task = await createHttpTask({
+    config,
+    endpoint: '/tasks/deletion',
+    payload,
+    queue: config.deletionQueue,
   })
 
   return {

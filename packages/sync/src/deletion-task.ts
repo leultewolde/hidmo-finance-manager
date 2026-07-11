@@ -15,10 +15,16 @@ type DeletionRequest = {
 }
 
 interface DeletionTaskRepositories {
+  users: {
+    deleteById(userId: string): Promise<boolean>
+  }
   connections: Parameters<
     typeof revokePlaidConnectionForDeletion
-  >[0]['repositories']['connections']
+  >[0]['repositories']['connections'] & {
+    listDeletionTargetsForUser(userId: string): Promise<{ id: string }[]>
+  }
   deletionRequests: {
+    getById(id: string): Promise<DeletionRequest | undefined>
     getByIdForUser(
       userId: string,
       id: string,
@@ -40,6 +46,14 @@ export type ProcessConnectionDeletionResult =
   PlaidConnectionRevocationResult & {
     status: 'completed' | 'already_completed'
   }
+
+export type ProcessUserDeletionResult = {
+  status: 'completed' | 'already_completed'
+  revokedConnectionCount: number
+  localTokenDestroyedCount: number
+  failedConnectionCount: number
+  userDeleted: boolean
+}
 
 export class DeletionRequestNotFoundError extends Error {
   constructor() {
@@ -68,7 +82,20 @@ function assertConnectionDeletionRequest(
   }
 }
 
-function auditMetadata(
+function assertUserDeletionRequest(
+  request: DeletionRequest,
+  input: { userId: string },
+) {
+  if (
+    request.scope !== 'user' ||
+    request.connectionId !== null ||
+    (request.userId !== null && request.userId !== input.userId)
+  ) {
+    throw new DeletionRequestMismatchError()
+  }
+}
+
+function connectionAuditMetadata(
   input: { connectionId: string },
   result?: PlaidConnectionRevocationResult,
 ) {
@@ -83,6 +110,25 @@ function auditMetadata(
           plaidErrorCode: result.plaidErrorCode,
           tokenErrorCode: result.tokenErrorCode,
         }),
+  }
+}
+
+function userAuditMetadata(input: {
+  revokedConnectionCount: number
+  localTokenDestroyedCount: number
+  failedConnectionCount: number
+  plaidErrorCodes: string[]
+  tokenErrorCodes: string[]
+  userDeleted: boolean
+}) {
+  return {
+    scope: 'user',
+    revokedConnectionCount: input.revokedConnectionCount,
+    localTokenDestroyedCount: input.localTokenDestroyedCount,
+    failedConnectionCount: input.failedConnectionCount,
+    plaidErrorCodes: input.plaidErrorCodes,
+    tokenErrorCodes: input.tokenErrorCodes,
+    userDeleted: input.userDeleted,
   }
 }
 
@@ -126,7 +172,7 @@ export async function processConnectionDeletionTask(input: {
 
     await input.repositories.deletionRequests.markSucceeded(
       input.deletionRequestId,
-      auditMetadata(input, result),
+      connectionAuditMetadata(input, result),
     )
 
     return {
@@ -137,7 +183,113 @@ export async function processConnectionDeletionTask(input: {
     await input.repositories.deletionRequests.markFailed(
       input.deletionRequestId,
       plaidErrorCode(error),
-      auditMetadata(input),
+      connectionAuditMetadata(input),
+    )
+    throw error
+  }
+}
+
+export async function processUserDeletionTask(input: {
+  userId: string
+  deletionRequestId: string
+  provider: PlaidProvider
+  repositories: DeletionTaskRepositories
+  wrappingKey: Buffer
+}): Promise<ProcessUserDeletionResult> {
+  const request = await input.repositories.deletionRequests.getById(
+    input.deletionRequestId,
+  )
+
+  if (request === undefined) {
+    throw new DeletionRequestNotFoundError()
+  }
+  assertUserDeletionRequest(request, input)
+
+  if (request.status === 'succeeded') {
+    return {
+      status: 'already_completed',
+      revokedConnectionCount: 0,
+      localTokenDestroyedCount: 0,
+      failedConnectionCount: 0,
+      userDeleted: true,
+    }
+  }
+
+  await input.repositories.deletionRequests.markRunning(input.deletionRequestId)
+
+  const connectionTargets =
+    await input.repositories.connections.listDeletionTargetsForUser(
+      input.userId,
+    )
+
+  const revocationResults: PlaidConnectionRevocationResult[] = []
+  try {
+    for (const connection of connectionTargets) {
+      revocationResults.push(
+        await revokePlaidConnectionForDeletion({
+          userId: input.userId,
+          connectionId: connection.id,
+          provider: input.provider,
+          repositories: input.repositories,
+          wrappingKey: input.wrappingKey,
+        }),
+      )
+    }
+
+    const userDeleted = await input.repositories.users.deleteById(input.userId)
+    const failedConnectionCount = revocationResults.filter(
+      (result) => !result.localTokenDestroyed,
+    ).length
+    const result = {
+      status: 'completed' as const,
+      revokedConnectionCount: revocationResults.filter(
+        (item) => item.plaidItemRevoked,
+      ).length,
+      localTokenDestroyedCount: revocationResults.filter(
+        (item) => item.localTokenDestroyed,
+      ).length,
+      failedConnectionCount,
+      userDeleted,
+    }
+
+    await input.repositories.deletionRequests.markSucceeded(
+      input.deletionRequestId,
+      userAuditMetadata({
+        ...result,
+        plaidErrorCodes: [
+          ...new Set(
+            revocationResults
+              .map((item) => item.plaidErrorCode)
+              .filter((code): code is string => code !== undefined),
+          ),
+        ],
+        tokenErrorCodes: [
+          ...new Set(
+            revocationResults
+              .map((item) => item.tokenErrorCode)
+              .filter((code): code is string => code !== undefined),
+          ),
+        ],
+      }),
+    )
+
+    return result
+  } catch (error) {
+    await input.repositories.deletionRequests.markFailed(
+      input.deletionRequestId,
+      plaidErrorCode(error),
+      userAuditMetadata({
+        revokedConnectionCount: revocationResults.filter(
+          (item) => item.plaidItemRevoked,
+        ).length,
+        localTokenDestroyedCount: revocationResults.filter(
+          (item) => item.localTokenDestroyed,
+        ).length,
+        failedConnectionCount: 1,
+        plaidErrorCodes: [],
+        tokenErrorCodes: [],
+        userDeleted: false,
+      }),
     )
     throw error
   }

@@ -305,6 +305,58 @@ describe('worker health server', () => {
     expect(response.body).toEqual({ error: 'unexpected_task_queue' })
   })
 
+  it('runs a user deletion task from the deletion queue', async () => {
+    const userDeletion = vi.fn().mockResolvedValue({
+      status: 'completed',
+      revokedConnectionCount: 2,
+      localTokenDestroyedCount: 2,
+      failedConnectionCount: 0,
+      userDeleted: true,
+    })
+
+    const response = await getWorkerResponse(
+      'POST',
+      '/tasks/deletion',
+      {
+        allowedTaskQueues: new Set(['deletion']),
+        userDeletion,
+        logger: createLogger('test', 'silent'),
+        pool: { query: vi.fn() } as never,
+      },
+      {
+        bodyText: JSON.stringify({
+          operation: 'deletion.user',
+          schemaVersion: 1,
+          userId: '00000000-0000-4000-8000-000000000001',
+          deletionRequestId: '00000000-0000-4000-8000-000000000003',
+          idempotencyKey:
+            'deletion:user:00000000-0000-4000-8000-000000000001:test',
+        }),
+        headers: {
+          'x-cloudtasks-queuename': 'deletion',
+          'x-cloudtasks-taskname': 'user-deletion-test',
+        },
+      },
+    )
+
+    expect(response.statusCode).toBe(200)
+    expect(response.body).toMatchObject({
+      operation: 'deletion.user',
+      status: 'completed',
+      userId: '00000000-0000-4000-8000-000000000001',
+      deletionRequestId: '00000000-0000-4000-8000-000000000003',
+      taskName: 'user-deletion-test',
+      revokedConnectionCount: 2,
+      localTokenDestroyedCount: 2,
+      failedConnectionCount: 0,
+      userDeleted: true,
+    })
+    expect(userDeletion).toHaveBeenCalledWith({
+      userId: '00000000-0000-4000-8000-000000000001',
+      deletionRequestId: '00000000-0000-4000-8000-000000000003',
+    })
+  })
+
   it('runs a financial analysis task from the ai-analysis queue', async () => {
     const financialAnalysis = vi.fn().mockResolvedValue({
       status: 'generated',

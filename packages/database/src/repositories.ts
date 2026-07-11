@@ -270,6 +270,12 @@ export class UserRepository {
       return created
     })
   }
+
+  async deleteById(userId: string) {
+    await this.db.delete(users).where(eq(users.id, userId))
+
+    return true
+  }
 }
 
 export interface ConnectedAccountInput {
@@ -314,6 +320,14 @@ export class ConnectionRepository {
   async listForUser(userId: string) {
     return this.db
       .select()
+      .from(connections)
+      .where(eq(connections.userId, userId))
+      .orderBy(asc(connections.id))
+  }
+
+  async listDeletionTargetsForUser(userId: string) {
+    return this.db
+      .select({ id: connections.id })
       .from(connections)
       .where(eq(connections.userId, userId))
       .orderBy(asc(connections.id))
@@ -2777,6 +2791,16 @@ export class DeletionRequestRepository {
       .where(
         and(eq(deletionRequests.id, id), eq(deletionRequests.userId, userId)),
       )
+      .limit(1)
+
+    return request
+  }
+
+  async getById(id: string) {
+    const [request] = await this.db
+      .select()
+      .from(deletionRequests)
+      .where(eq(deletionRequests.id, id))
       .limit(1)
 
     return request

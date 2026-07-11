@@ -23,6 +23,9 @@ import {
   type HealthResponse,
   type PlaidSyncTaskResponse,
   type RecommendationGenerationTaskResponse,
+  userDeletionTaskPayloadSchema,
+  userDeletionTaskResponseSchema,
+  type UserDeletionTaskResponse,
 } from '@hidmo/contracts'
 import { checkDatabase, type createDatabasePool } from '@hidmo/database'
 import type { Logger } from '@hidmo/logging'
@@ -72,6 +75,16 @@ type ServerDependencies = {
     plaidErrorCode?: string
     tokenErrorCode?: string
   }>
+  userDeletion?: (input: {
+    userId: string
+    deletionRequestId: string
+  }) => Promise<{
+    status: 'completed' | 'already_completed'
+    revokedConnectionCount: number
+    localTokenDestroyedCount: number
+    failedConnectionCount: number
+    userDeleted: boolean
+  }>
   plaidSync?: (input: {
     userId: string
     connectionId: string
@@ -104,6 +117,7 @@ type WorkerResponse = {
     | HealthResponse
     | CloudTaskSmokeResponse
     | ConnectionDeletionTaskResponse
+    | UserDeletionTaskResponse
     | FinancialAnalysisTaskResponse
     | PlaidSyncTaskResponse
     | RecommendationGenerationTaskResponse
@@ -117,6 +131,7 @@ function sendJson(
     | HealthResponse
     | CloudTaskSmokeResponse
     | ConnectionDeletionTaskResponse
+    | UserDeletionTaskResponse
     | FinancialAnalysisTaskResponse
     | PlaidSyncTaskResponse
     | RecommendationGenerationTaskResponse
@@ -278,8 +293,62 @@ async function handlePlaidSyncTask(
 async function handleConnectionDeletionTask(
   bodyText: string | undefined,
   headers: Record<string, string | string[] | undefined> | undefined,
-  { allowedTaskQueues, connectionDeletion }: ServerDependencies,
+  { allowedTaskQueues, connectionDeletion, userDeletion }: ServerDependencies,
 ): Promise<WorkerResponse> {
+  const validation = validateCloudTasksRequest(headers, allowedTaskQueues)
+  if (!validation.ok) return validation.response
+
+  const rawPayload =
+    bodyText === undefined || bodyText.length === 0
+      ? undefined
+      : JSON.parse(bodyText)
+
+  const operation =
+    typeof rawPayload === 'object' &&
+    rawPayload !== null &&
+    'operation' in rawPayload
+      ? rawPayload.operation
+      : undefined
+
+  if (operation === 'deletion.user') {
+    if (userDeletion === undefined) {
+      return {
+        statusCode: 503,
+        body: { error: 'user_deletion_unavailable' },
+      }
+    }
+
+    const parsed = userDeletionTaskPayloadSchema.safeParse(rawPayload)
+    if (!parsed.success) {
+      return { statusCode: 400, body: { error: 'invalid_task_payload' } }
+    }
+
+    const result = await userDeletion({
+      userId: parsed.data.userId,
+      deletionRequestId: parsed.data.deletionRequestId,
+    })
+
+    return {
+      statusCode: 200,
+      body: userDeletionTaskResponseSchema.parse({
+        status: result.status,
+        operation: parsed.data.operation,
+        userId: parsed.data.userId,
+        deletionRequestId: parsed.data.deletionRequestId,
+        idempotencyKey: parsed.data.idempotencyKey,
+        taskName: validation.taskName,
+        revokedConnectionCount: result.revokedConnectionCount,
+        localTokenDestroyedCount: result.localTokenDestroyedCount,
+        failedConnectionCount: result.failedConnectionCount,
+        userDeleted: result.userDeleted,
+      }),
+    }
+  }
+
+  if (operation !== 'deletion.connection') {
+    return { statusCode: 400, body: { error: 'invalid_task_payload' } }
+  }
+
   if (connectionDeletion === undefined) {
     return {
       statusCode: 503,
@@ -287,14 +356,7 @@ async function handleConnectionDeletionTask(
     }
   }
 
-  const validation = validateCloudTasksRequest(headers, allowedTaskQueues)
-  if (!validation.ok) return validation.response
-
-  const parsed = connectionDeletionTaskPayloadSchema.safeParse(
-    bodyText === undefined || bodyText.length === 0
-      ? undefined
-      : JSON.parse(bodyText),
-  )
+  const parsed = connectionDeletionTaskPayloadSchema.safeParse(rawPayload)
   if (!parsed.success) {
     return { statusCode: 400, body: { error: 'invalid_task_payload' } }
   }

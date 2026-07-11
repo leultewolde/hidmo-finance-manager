@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildFinanceExportArchive,
   buildFinanceExport,
   buildFinanceExportDatasets,
   writeCsv,
@@ -145,5 +146,23 @@ describe('finance export writer', () => {
         rows: [{ plaidItemId: 'item-secret' }],
       }),
     ).toThrow('Unsafe export column is not allowed')
+  })
+
+  it('builds an uncompressed ZIP archive for browser download', () => {
+    const archive = buildFinanceExportArchive({
+      generatedAt,
+      appVersion: 'test-version',
+      data: emptyData,
+    })
+
+    expect(archive.fileName).toBe('hidmo-finance-export-2026-07-11.zip')
+    expect(archive.contentType).toBe('application/zip')
+    expect(Array.from(archive.content.slice(0, 4))).toEqual([
+      0x50, 0x4b, 0x03, 0x04,
+    ])
+    const text = new TextDecoder().decode(archive.content)
+    expect(text).toContain('manifest.json')
+    expect(text).toContain('accounts.csv')
+    expect(text).toContain('connections.csv')
   })
 })

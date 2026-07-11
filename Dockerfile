@@ -33,6 +33,7 @@ COPY apps apps
 COPY packages packages
 
 RUN pnpm --filter @hidmo/finance-engine build
+RUN pnpm --filter @hidmo/export build
 RUN pnpm --filter @hidmo/classification build
 RUN pnpm --filter @hidmo/plaid build
 RUN pnpm --filter './packages/**' build

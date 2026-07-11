@@ -13,6 +13,7 @@
     "@hidmo/config": "workspace:*",
     "@hidmo/contracts": "workspace:*",
     "@hidmo/database": "workspace:*",
+    "@hidmo/export": "workspace:*",
     "@hidmo/finance-engine": "workspace:*",
     "@hidmo/logging": "workspace:*",
     "@hidmo/plaid": "workspace:*",

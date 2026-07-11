@@ -56,6 +56,12 @@ export type FinanceExportBundle = {
   files: readonly GeneratedExportFile[]
 }
 
+export type FinanceExportArchive = {
+  fileName: string
+  contentType: 'application/zip'
+  content: Uint8Array
+}
+
 export type ExportAccountRow = {
   id: string
   connectionId: string | null
@@ -553,5 +559,145 @@ export function buildFinanceExport(
         content,
       })),
     ],
+  }
+}
+
+const crcTable = Array.from({ length: 256 }, (_, index) => {
+  let value = index
+  for (let bit = 0; bit < 8; bit += 1) {
+    value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1
+  }
+  return value >>> 0
+})
+
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff
+  for (const byte of bytes) {
+    crc = (crc >>> 8) ^ crcTable[(crc ^ byte) & 0xff]!
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+function writeUint16(buffer: Uint8Array, offset: number, value: number) {
+  buffer[offset] = value & 0xff
+  buffer[offset + 1] = (value >>> 8) & 0xff
+}
+
+function writeUint32(buffer: Uint8Array, offset: number, value: number) {
+  buffer[offset] = value & 0xff
+  buffer[offset + 1] = (value >>> 8) & 0xff
+  buffer[offset + 2] = (value >>> 16) & 0xff
+  buffer[offset + 3] = (value >>> 24) & 0xff
+}
+
+function dosTimestamp(date: Date): { time: number; date: number } {
+  const year = Math.max(1980, date.getUTCFullYear())
+  return {
+    time:
+      (date.getUTCHours() << 11) |
+      (date.getUTCMinutes() << 5) |
+      Math.floor(date.getUTCSeconds() / 2),
+    date:
+      ((year - 1980) << 9) |
+      ((date.getUTCMonth() + 1) << 5) |
+      date.getUTCDate(),
+  }
+}
+
+function concatBytes(chunks: readonly Uint8Array[]): Uint8Array {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
+  const output = new Uint8Array(totalLength)
+  let offset = 0
+  for (const chunk of chunks) {
+    output.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return output
+}
+
+export function buildFinanceExportZip(input: {
+  exportBundle: FinanceExportBundle
+  generatedAt: Date
+}): Uint8Array {
+  const encoder = new TextEncoder()
+  const timestamp = dosTimestamp(input.generatedAt)
+  const localFileChunks: Uint8Array[] = []
+  const centralDirectoryChunks: Uint8Array[] = []
+  let localOffset = 0
+
+  for (const file of input.exportBundle.files) {
+    const fileNameBytes = encoder.encode(file.path)
+    const contentBytes = encoder.encode(file.content)
+    const checksum = crc32(contentBytes)
+    const localHeader = new Uint8Array(30 + fileNameBytes.byteLength)
+
+    writeUint32(localHeader, 0, 0x04034b50)
+    writeUint16(localHeader, 4, 20)
+    writeUint16(localHeader, 6, 0x0800)
+    writeUint16(localHeader, 8, 0)
+    writeUint16(localHeader, 10, timestamp.time)
+    writeUint16(localHeader, 12, timestamp.date)
+    writeUint32(localHeader, 14, checksum)
+    writeUint32(localHeader, 18, contentBytes.byteLength)
+    writeUint32(localHeader, 22, contentBytes.byteLength)
+    writeUint16(localHeader, 26, fileNameBytes.byteLength)
+    writeUint16(localHeader, 28, 0)
+    localHeader.set(fileNameBytes, 30)
+
+    const centralHeader = new Uint8Array(46 + fileNameBytes.byteLength)
+    writeUint32(centralHeader, 0, 0x02014b50)
+    writeUint16(centralHeader, 4, 20)
+    writeUint16(centralHeader, 6, 20)
+    writeUint16(centralHeader, 8, 0x0800)
+    writeUint16(centralHeader, 10, 0)
+    writeUint16(centralHeader, 12, timestamp.time)
+    writeUint16(centralHeader, 14, timestamp.date)
+    writeUint32(centralHeader, 16, checksum)
+    writeUint32(centralHeader, 20, contentBytes.byteLength)
+    writeUint32(centralHeader, 24, contentBytes.byteLength)
+    writeUint16(centralHeader, 28, fileNameBytes.byteLength)
+    writeUint16(centralHeader, 30, 0)
+    writeUint16(centralHeader, 32, 0)
+    writeUint16(centralHeader, 34, 0)
+    writeUint16(centralHeader, 36, 0)
+    writeUint32(centralHeader, 38, 0)
+    writeUint32(centralHeader, 42, localOffset)
+    centralHeader.set(fileNameBytes, 46)
+
+    localFileChunks.push(localHeader, contentBytes)
+    centralDirectoryChunks.push(centralHeader)
+    localOffset += localHeader.byteLength + contentBytes.byteLength
+  }
+
+  const centralDirectory = concatBytes(centralDirectoryChunks)
+  const endOfCentralDirectory = new Uint8Array(22)
+  writeUint32(endOfCentralDirectory, 0, 0x06054b50)
+  writeUint16(endOfCentralDirectory, 4, 0)
+  writeUint16(endOfCentralDirectory, 6, 0)
+  writeUint16(endOfCentralDirectory, 8, input.exportBundle.files.length)
+  writeUint16(endOfCentralDirectory, 10, input.exportBundle.files.length)
+  writeUint32(endOfCentralDirectory, 12, centralDirectory.byteLength)
+  writeUint32(endOfCentralDirectory, 16, localOffset)
+  writeUint16(endOfCentralDirectory, 20, 0)
+
+  return concatBytes([
+    ...localFileChunks,
+    centralDirectory,
+    endOfCentralDirectory,
+  ])
+}
+
+export function buildFinanceExportArchive(
+  input: FinanceExportInput,
+): FinanceExportArchive {
+  const bundle = buildFinanceExport(input)
+  const generatedDate = input.generatedAt.toISOString().slice(0, 10)
+  return {
+    fileName: `hidmo-finance-export-${generatedDate}.zip`,
+    contentType: 'application/zip',
+    content: buildFinanceExportZip({
+      exportBundle: bundle,
+      generatedAt: input.generatedAt,
+    }),
   }
 }

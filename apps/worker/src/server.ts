@@ -8,6 +8,8 @@ import { randomUUID } from 'node:crypto'
 import {
   cloudTaskSmokePayloadSchema,
   cloudTaskSmokeResponseSchema,
+  connectionDeletionTaskPayloadSchema,
+  connectionDeletionTaskResponseSchema,
   financialAnalysisTaskPayloadSchema,
   financialAnalysisTaskResponseSchema,
   healthResponseSchema,
@@ -16,6 +18,7 @@ import {
   recommendationGenerationTaskPayloadSchema,
   recommendationGenerationTaskResponseSchema,
   type CloudTaskSmokeResponse,
+  type ConnectionDeletionTaskResponse,
   type FinancialAnalysisTaskResponse,
   type HealthResponse,
   type PlaidSyncTaskResponse,
@@ -57,6 +60,18 @@ type ServerDependencies = {
     recommendationCount: number
   }>
   logger: Logger
+  connectionDeletion?: (input: {
+    userId: string
+    connectionId: string
+    deletionRequestId: string
+  }) => Promise<{
+    status: 'completed' | 'already_completed'
+    connectionId: string
+    plaidItemRevoked: boolean
+    localTokenDestroyed: boolean
+    plaidErrorCode?: string
+    tokenErrorCode?: string
+  }>
   plaidSync?: (input: {
     userId: string
     connectionId: string
@@ -88,6 +103,7 @@ type WorkerResponse = {
   body:
     | HealthResponse
     | CloudTaskSmokeResponse
+    | ConnectionDeletionTaskResponse
     | FinancialAnalysisTaskResponse
     | PlaidSyncTaskResponse
     | RecommendationGenerationTaskResponse
@@ -100,6 +116,7 @@ function sendJson(
   body:
     | HealthResponse
     | CloudTaskSmokeResponse
+    | ConnectionDeletionTaskResponse
     | FinancialAnalysisTaskResponse
     | PlaidSyncTaskResponse
     | RecommendationGenerationTaskResponse
@@ -254,6 +271,58 @@ async function handlePlaidSyncTask(
       connectionId: parsed.data.connectionId,
       syncJobId: parsed.data.syncJobId,
       ...result,
+    }),
+  }
+}
+
+async function handleConnectionDeletionTask(
+  bodyText: string | undefined,
+  headers: Record<string, string | string[] | undefined> | undefined,
+  { allowedTaskQueues, connectionDeletion }: ServerDependencies,
+): Promise<WorkerResponse> {
+  if (connectionDeletion === undefined) {
+    return {
+      statusCode: 503,
+      body: { error: 'connection_deletion_unavailable' },
+    }
+  }
+
+  const validation = validateCloudTasksRequest(headers, allowedTaskQueues)
+  if (!validation.ok) return validation.response
+
+  const parsed = connectionDeletionTaskPayloadSchema.safeParse(
+    bodyText === undefined || bodyText.length === 0
+      ? undefined
+      : JSON.parse(bodyText),
+  )
+  if (!parsed.success) {
+    return { statusCode: 400, body: { error: 'invalid_task_payload' } }
+  }
+
+  const result = await connectionDeletion({
+    userId: parsed.data.userId,
+    connectionId: parsed.data.connectionId,
+    deletionRequestId: parsed.data.deletionRequestId,
+  })
+
+  return {
+    statusCode: 200,
+    body: connectionDeletionTaskResponseSchema.parse({
+      status: result.status,
+      operation: parsed.data.operation,
+      userId: parsed.data.userId,
+      connectionId: parsed.data.connectionId,
+      deletionRequestId: parsed.data.deletionRequestId,
+      idempotencyKey: parsed.data.idempotencyKey,
+      taskName: validation.taskName,
+      plaidItemRevoked: result.plaidItemRevoked,
+      localTokenDestroyed: result.localTokenDestroyed,
+      ...(result.plaidErrorCode === undefined
+        ? {}
+        : { plaidErrorCode: result.plaidErrorCode }),
+      ...(result.tokenErrorCode === undefined
+        ? {}
+        : { tokenErrorCode: result.tokenErrorCode }),
     }),
   }
 }
@@ -469,6 +538,22 @@ export async function getWorkerResponse(
     } catch (error) {
       logger.error({ err: error }, 'worker Plaid sync task failed')
       return { statusCode: 500, body: { error: 'plaid_sync_task_failed' } }
+    }
+  }
+
+  if (method === 'POST' && path === '/tasks/deletion') {
+    try {
+      return await handleConnectionDeletionTask(
+        request?.bodyText,
+        request?.headers,
+        dependencies,
+      )
+    } catch (error) {
+      logger.error({ err: error }, 'worker connection deletion task failed')
+      return {
+        statusCode: 500,
+        body: { error: 'connection_deletion_task_failed' },
+      }
     }
   }
 

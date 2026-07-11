@@ -124,6 +124,37 @@ export type RecommendationGenerationTaskResponse = z.infer<
   typeof recommendationGenerationTaskResponseSchema
 >
 
+export const connectionDeletionTaskPayloadSchema = z.object({
+  operation: z.literal('deletion.connection'),
+  schemaVersion: z.literal(1),
+  userId: z.uuid(),
+  connectionId: z.uuid(),
+  deletionRequestId: z.uuid(),
+  idempotencyKey: z.string().min(1).max(200),
+})
+
+export type ConnectionDeletionTaskPayload = z.infer<
+  typeof connectionDeletionTaskPayloadSchema
+>
+
+export const connectionDeletionTaskResponseSchema = z.object({
+  status: z.enum(['completed', 'already_completed']),
+  operation: z.literal('deletion.connection'),
+  userId: z.uuid(),
+  connectionId: z.uuid(),
+  deletionRequestId: z.uuid(),
+  idempotencyKey: z.string().min(1),
+  taskName: z.string().min(1),
+  plaidItemRevoked: z.boolean(),
+  localTokenDestroyed: z.boolean(),
+  plaidErrorCode: z.string().min(1).optional(),
+  tokenErrorCode: z.string().min(1).optional(),
+})
+
+export type ConnectionDeletionTaskResponse = z.infer<
+  typeof connectionDeletionTaskResponseSchema
+>
+
 export const plaidWebhookPayloadSchema = z.object({
   webhook_type: z.string().min(1),
   webhook_code: z.string().min(1),

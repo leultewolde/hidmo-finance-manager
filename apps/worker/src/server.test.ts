@@ -222,6 +222,89 @@ describe('worker health server', () => {
     expect(response.body).toEqual({ error: 'unexpected_task_queue' })
   })
 
+  it('runs a connection deletion task from the deletion queue', async () => {
+    const connectionDeletion = vi.fn().mockResolvedValue({
+      status: 'completed',
+      connectionId: '00000000-0000-4000-8000-000000000002',
+      plaidItemRevoked: true,
+      localTokenDestroyed: true,
+    })
+
+    const response = await getWorkerResponse(
+      'POST',
+      '/tasks/deletion',
+      {
+        allowedTaskQueues: new Set(['deletion']),
+        connectionDeletion,
+        logger: createLogger('test', 'silent'),
+        pool: { query: vi.fn() } as never,
+      },
+      {
+        bodyText: JSON.stringify({
+          operation: 'deletion.connection',
+          schemaVersion: 1,
+          userId: '00000000-0000-4000-8000-000000000001',
+          connectionId: '00000000-0000-4000-8000-000000000002',
+          deletionRequestId: '00000000-0000-4000-8000-000000000003',
+          idempotencyKey:
+            'deletion:connection:00000000-0000-4000-8000-000000000002:test',
+        }),
+        headers: {
+          'x-cloudtasks-queuename': 'deletion',
+          'x-cloudtasks-taskname': 'connection-deletion-test',
+        },
+      },
+    )
+
+    expect(response.statusCode).toBe(200)
+    expect(response.body).toMatchObject({
+      operation: 'deletion.connection',
+      status: 'completed',
+      userId: '00000000-0000-4000-8000-000000000001',
+      connectionId: '00000000-0000-4000-8000-000000000002',
+      deletionRequestId: '00000000-0000-4000-8000-000000000003',
+      taskName: 'connection-deletion-test',
+      plaidItemRevoked: true,
+      localTokenDestroyed: true,
+    })
+    expect(connectionDeletion).toHaveBeenCalledWith({
+      userId: '00000000-0000-4000-8000-000000000001',
+      connectionId: '00000000-0000-4000-8000-000000000002',
+      deletionRequestId: '00000000-0000-4000-8000-000000000003',
+    })
+  })
+
+  it('rejects connection deletion tasks from unexpected queues', async () => {
+    const response = await getWorkerResponse(
+      'POST',
+      '/tasks/deletion',
+      {
+        allowedTaskQueues: new Set(['calculation']),
+        connectionDeletion: vi.fn(),
+        logger: createLogger('test', 'silent'),
+        pool: { query: vi.fn() } as never,
+      },
+      {
+        bodyText: JSON.stringify({
+          operation: 'deletion.connection',
+          schemaVersion: 1,
+          userId: '00000000-0000-4000-8000-000000000001',
+          connectionId: '00000000-0000-4000-8000-000000000002',
+          deletionRequestId: '00000000-0000-4000-8000-000000000003',
+          idempotencyKey:
+            'deletion:connection:00000000-0000-4000-8000-000000000002:test',
+        }),
+        headers: {
+          'x-cloudtasks-queuename': 'deletion',
+          'x-cloudtasks-taskname': 'connection-deletion-test',
+        },
+      },
+    )
+
+    expect(response.statusCode).toBe(403)
+    expect(response.body).toEqual({ error: 'unexpected_task_queue' })
+  })
+
   it('runs a financial analysis task from the ai-analysis queue', async () => {
     const financialAnalysis = vi.fn().mockResolvedValue({
       status: 'generated',

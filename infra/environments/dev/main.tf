@@ -540,7 +540,7 @@ module "cloud_run" {
   }
   worker_environment = merge(var.worker_environment, {
     AI_PROVIDER                = "mock"
-    CLOUD_TASKS_ALLOWED_QUEUES = "calculation,plaid-sync,ai-analysis"
+    CLOUD_TASKS_ALLOWED_QUEUES = "calculation,plaid-sync,ai-analysis,deletion"
     PLAID_ENV                  = "sandbox"
     VERTEX_AI_LOCATION         = "us"
     VERTEX_AI_MODEL            = "gemini-3.1-flash-lite"

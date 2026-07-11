@@ -98,6 +98,16 @@ export const syncJobStatusEnum = pgEnum('sync_job_status', [
   'succeeded',
   'failed',
 ])
+export const deletionRequestScopeEnum = pgEnum('deletion_request_scope', [
+  'user',
+  'connection',
+])
+export const deletionRequestStatusEnum = pgEnum('deletion_request_status', [
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+])
 export const analysisSnapshotStatusEnum = pgEnum('analysis_snapshot_status', [
   'draft',
   'complete',
@@ -755,6 +765,58 @@ export const syncJobs = pgTable(
   ],
 )
 
+export const deletionRequests = pgTable(
+  'deletion_requests',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    connectionId: uuid('connection_id'),
+    scope: deletionRequestScopeEnum('scope').notNull(),
+    status: deletionRequestStatusEnum('status').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    requestedBy: text('requested_by').notNull().default('owner'),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    lastErrorCode: text('last_error_code'),
+    attemptCount: integer('attempt_count').notNull().default(0),
+    auditMetadata: jsonb('audit_metadata').notNull().default({}),
+    ...timestamps,
+  },
+  (table) => [
+    uniqueIndex('deletion_requests_idempotency_unique').on(
+      table.idempotencyKey,
+    ),
+    index('deletion_requests_user_created_idx').on(
+      table.userId,
+      table.createdAt,
+    ),
+    index('deletion_requests_connection_created_idx').on(
+      table.connectionId,
+      table.createdAt,
+    ),
+    index('deletion_requests_status_created_idx').on(
+      table.status,
+      table.createdAt,
+    ),
+    check(
+      'deletion_requests_scope_shape',
+      sql`(
+        ${table.scope} = 'connection'
+        and ${table.connectionId} is not null
+      ) or (
+        ${table.scope} = 'user'
+        and ${table.connectionId} is null
+      )`,
+    ),
+    check(
+      'deletion_requests_attempt_nonnegative',
+      sql`${table.attemptCount} >= 0`,
+    ),
+  ],
+)
+
 export const analysisSnapshots = pgTable(
   'analysis_snapshots',
   {
@@ -839,5 +901,6 @@ export type AccountRow = typeof accounts.$inferSelect
 export type TransactionRow = typeof transactions.$inferSelect
 export type LiabilityRow = typeof liabilities.$inferSelect
 export type SyncJobRow = typeof syncJobs.$inferSelect
+export type DeletionRequestRow = typeof deletionRequests.$inferSelect
 export type AnalysisSnapshotRow = typeof analysisSnapshots.$inferSelect
 export type AnalysisJobRow = typeof analysisJobs.$inferSelect

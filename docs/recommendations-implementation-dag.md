@@ -179,7 +179,10 @@ Defer policies that need additional product work:
   masks, owner identity, or free-form notes.
 - Repeated dashboard loads do not call Vertex AI.
 - Manual refresh is asynchronous, idempotent, and cooldown-protected.
-- Vertex provider usage logs model, latency, token counts, and status without
-  logging prompt text.
+- Vertex provider usage logs model, latency, token counts, byte counts,
+  estimated cost when available, and status without logging prompt text.
 - Fixture evaluations cover groundedness, prohibited claims, privacy, and
   provider failures.
+
+Final deployed operations are tracked in
+[the recommendation operations runbook](./recommendations-runbook.md).

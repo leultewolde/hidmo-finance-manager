@@ -243,6 +243,39 @@ locals {
         Check Cloud Run logs for `finance-web`, Cloud Tasks queue permissions, the `ai-analysis` queue, the `tasks-invoker` service account, and Cloud Tasks API availability.
       EOT
     }
+
+    worker_recommendation_generation_task_failures = {
+      description         = "Counts worker recommendation generation task failures."
+      filter              = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"finance-worker\" AND jsonPayload.msg=\"worker recommendation generation task failed\""
+      alert_display_name  = "Finance dev worker recommendation generation failures"
+      alert_documentation = <<-EOT
+        A recommendation generation Cloud Task reached the worker but failed before completing the stored recommendations.
+
+        Check Cloud Run logs for `finance-worker`, then inspect the dashboard recommendation section. Common causes are database connectivity, malformed task payloads, deterministic policy regressions, grounding schema failures, provider failures, or Vertex AI configuration when the provider is changed from `mock` to `vertex`.
+      EOT
+    }
+
+    worker_recommendation_grounding_failures = {
+      description         = "Counts recommendation provider, schema, and grounding failures."
+      filter              = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"finance-worker\" AND jsonPayload.msg=\"worker recommendation generation task failed\" AND (jsonPayload.err.code=\"AI_OUTPUT_INVALID\" OR jsonPayload.err.code=\"AI_PROVIDER_RESPONSE_INVALID\" OR jsonPayload.err.code=\"AI_PROVIDER_REQUEST_FAILED\" OR jsonPayload.err.code=\"AI_PROVIDER_AUTH_FAILED\")"
+      alert_display_name  = "Finance dev worker recommendation grounding failures"
+      alert_documentation = <<-EOT
+        Recommendation grounding failed because the configured AI provider was unavailable, returned invalid output, or failed the evidence/schema guardrails.
+
+        Check `jsonPayload.err.code` in `finance-worker` logs. Keep `AI_PROVIDER=mock` for normal development unless Vertex validation is explicitly in progress. If the error is `AI_OUTPUT_INVALID`, verify the provider output references only supplied evidence IDs and does not introduce unsupported claims.
+      EOT
+    }
+
+    web_recommendation_generation_enqueue_failures = {
+      description         = "Counts web service failures when enqueueing recommendation generation tasks."
+      filter              = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"finance-web\" AND jsonPayload.msg=\"Recommendation generation enqueue failed\""
+      alert_display_name  = "Finance dev web recommendation enqueue failures"
+      alert_documentation = <<-EOT
+        The web service failed while queueing a recommendation generation request.
+
+        Check Cloud Run logs for `finance-web`, Cloud Tasks queue permissions, the `ai-analysis` queue, the `tasks-invoker` service account, and Cloud Tasks API availability. This failure is usually visible to the owner as a dashboard refresh error.
+      EOT
+    }
   }
 }
 

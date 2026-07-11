@@ -40,6 +40,7 @@ export function createMockRecommendationGroundingProvider(
     async rankAndExplain(
       request: RecommendationGroundingRequest,
     ): Promise<RecommendationGroundingResult> {
+      const startedAt = Date.now()
       const prompt = buildRecommendationGroundingPrompt(request)
       const recommendations = validateGroundedRecommendationResponse(
         {
@@ -74,6 +75,7 @@ export function createMockRecommendationGroundingProvider(
             JSON.stringify({ recommendations }),
             'utf8',
           ),
+          latencyMs: Date.now() - startedAt,
         }),
       }
     },

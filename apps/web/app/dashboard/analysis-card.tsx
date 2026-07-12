@@ -138,10 +138,12 @@ function priorityLabel(priority: 'high' | 'medium' | 'low') {
 
 export function AnalysisCard({
   currentPeriod,
+  deletionActive,
   latestJob,
   latestSnapshot,
 }: {
   currentPeriod: AnalysisPeriodView
+  deletionActive: boolean
   latestJob: AnalysisJobView | null
   latestSnapshot: AnalysisSnapshotView | null
 }) {
@@ -204,15 +206,17 @@ export function AnalysisCard({
         </div>
         <button
           className="primaryButton"
-          disabled={working || queuedOrRunning}
+          disabled={deletionActive || working || queuedOrRunning}
           onClick={generateAnalysis}
           type="button"
         >
-          {working
-            ? 'Queueing…'
-            : queuedOrRunning
-              ? 'Analysis running'
-              : 'Generate analysis'}
+          {deletionActive
+            ? 'Disabled during deletion'
+            : working
+              ? 'Queueing…'
+              : queuedOrRunning
+                ? 'Analysis running'
+                : 'Generate analysis'}
         </button>
       </div>
 

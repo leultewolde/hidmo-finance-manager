@@ -355,8 +355,10 @@ function disconnectErrorMessage(code: string | undefined) {
 }
 
 export function PlaidConnectionManager({
+  deletionActive,
   initialConnections,
 }: {
+  deletionActive: boolean
   initialConnections: ConnectionView[]
 }) {
   const [linkToken, setLinkToken] = useState<string | null>(null)
@@ -522,13 +524,24 @@ export function PlaidConnectionManager({
         </div>
         <button
           className="primaryButton"
-          disabled={working}
+          disabled={deletionActive || working}
           onClick={beginConnection}
           type="button"
         >
-          {working ? 'Working…' : 'Connect account'}
+          {deletionActive
+            ? 'Disabled during deletion'
+            : working
+              ? 'Working…'
+              : 'Connect account'}
         </button>
       </div>
+
+      {deletionActive ? (
+        <p className="attentionText">
+          Account deletion is queued or running. Plaid connection changes and
+          transaction sync are disabled.
+        </p>
+      ) : null}
 
       {status === '' ? null : (
         <p className="connectionStatus" role="status">
@@ -548,6 +561,7 @@ export function PlaidConnectionManager({
               disconnect={disconnect}
               key={connection.id}
               sync={sync}
+              deletionActive={deletionActive}
               working={working}
             />
           ))}
@@ -559,11 +573,13 @@ export function PlaidConnectionManager({
 
 function ConnectionCard({
   connection,
+  deletionActive,
   disconnect,
   sync,
   working,
 }: {
   connection: ConnectionView
+  deletionActive: boolean
   disconnect(connectionId: string): void
   sync(connectionId: string): void
   working: boolean
@@ -626,6 +642,7 @@ function ConnectionCard({
           <button
             className="secondaryButton"
             disabled={
+              deletionActive ||
               working ||
               needsReconnect ||
               connection.latestSyncJob?.status === 'queued' ||
@@ -638,7 +655,7 @@ function ConnectionCard({
           </button>
           <button
             className="textButton"
-            disabled={working}
+            disabled={deletionActive || working}
             onClick={() => disconnect(connection.id)}
             type="button"
           >

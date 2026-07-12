@@ -1,4 +1,4 @@
-export function ExportCard() {
+export function ExportCard({ deletionActive }: { deletionActive: boolean }) {
   return (
     <section className="exportSection">
       <div>
@@ -11,9 +11,15 @@ export function ExportCard() {
           transaction IDs, account masks, and encryption material.
         </p>
       </div>
-      <a className="primaryButton exportButton" href="/api/export">
-        Download CSV export
-      </a>
+      {deletionActive ? (
+        <span className="primaryButton exportButton disabledAction">
+          Export disabled during deletion
+        </span>
+      ) : (
+        <a className="primaryButton exportButton" href="/api/export">
+          Download CSV export
+        </a>
+      )}
     </section>
   )
 }

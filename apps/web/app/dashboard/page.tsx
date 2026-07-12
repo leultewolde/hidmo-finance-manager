@@ -14,6 +14,10 @@ import {
   type RecommendationView,
 } from './recommendation-card'
 import { ExportCard } from './export-card'
+import {
+  AccountDeletionCard,
+  type AccountDeletionStatus,
+} from './account-deletion-card'
 import { ReviewQueue } from './review-queue'
 import { SignOutButton } from './sign-out-button'
 import { serializeRecommendationView } from '../../lib/recommendation-view'
@@ -177,6 +181,23 @@ export default async function DashboardPage() {
     await ownerContext.repositories.connections.listWithAccountsForUser(
       ownerContext.databaseOwner.id,
     )
+  const recentDeletionRequests =
+    await ownerContext.repositories.deletionRequests.listRecentForUser(
+      ownerContext.databaseOwner.id,
+    )
+  const latestUserDeletionRequest = recentDeletionRequests.find(
+    (request) => request.scope === 'user',
+  )
+  const accountDeletionStatus: AccountDeletionStatus =
+    latestUserDeletionRequest === undefined
+      ? { status: 'none', deletionRequestId: null }
+      : {
+          status: latestUserDeletionRequest.status,
+          deletionRequestId: latestUserDeletionRequest.id,
+        }
+  const deletionActive =
+    accountDeletionStatus.status === 'queued' ||
+    accountDeletionStatus.status === 'running'
   const recentSyncJobs =
     await ownerContext.repositories.syncJobs.listRecentForUser(
       ownerContext.databaseOwner.id,
@@ -395,10 +416,14 @@ export default async function DashboardPage() {
         </p>
       </section>
 
-      <PlaidConnectionManager initialConnections={connections} />
+      <PlaidConnectionManager
+        deletionActive={deletionActive}
+        initialConnections={connections}
+      />
 
       <AnalysisCard
         currentPeriod={analysisPeriod}
+        deletionActive={deletionActive}
         latestJob={
           latestAnalysisJob === undefined
             ? null
@@ -436,6 +461,7 @@ export default async function DashboardPage() {
 
       <RecommendationCard
         currentPeriod={analysisPeriod}
+        deletionActive={deletionActive}
         initialRecommendations={
           currentRecommendations.map(
             serializeRecommendationView,
@@ -443,7 +469,9 @@ export default async function DashboardPage() {
         }
       />
 
-      <ExportCard />
+      <ExportCard deletionActive={deletionActive} />
+
+      <AccountDeletionCard initialStatus={accountDeletionStatus} />
 
       <section className="classificationSummary">
         <p className="sectionLabel">Current month</p>

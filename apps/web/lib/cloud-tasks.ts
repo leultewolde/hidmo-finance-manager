@@ -8,6 +8,7 @@ import {
   financialAnalysisTaskPayloadSchema,
   plaidSyncTaskPayloadSchema,
   recommendationGenerationTaskPayloadSchema,
+  userDeletionTaskPayloadSchema,
 } from '@hidmo/contracts'
 import type { AnalysisPeriodPayload } from '@hidmo/contracts'
 
@@ -203,6 +204,32 @@ export async function enqueueConnectionDeletionTask(input: {
     schemaVersion: 1,
     userId: input.userId,
     connectionId: input.connectionId,
+    deletionRequestId: input.deletionRequestId,
+    idempotencyKey: input.idempotencyKey,
+  })
+  const task = await createHttpTask({
+    config,
+    endpoint: '/tasks/deletion',
+    payload,
+    queue: config.deletionQueue,
+  })
+
+  return {
+    idempotencyKey: input.idempotencyKey,
+    taskName: task.name ?? '',
+  }
+}
+
+export async function enqueueUserDeletionTask(input: {
+  userId: string
+  deletionRequestId: string
+  idempotencyKey: string
+}) {
+  const config = getCloudTaskConfig()
+  const payload = userDeletionTaskPayloadSchema.parse({
+    operation: 'deletion.user',
+    schemaVersion: 1,
+    userId: input.userId,
     deletionRequestId: input.deletionRequestId,
     idempotencyKey: input.idempotencyKey,
   })

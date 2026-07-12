@@ -100,9 +100,11 @@ function statusMessage(status: RecommendationStatus) {
 
 export function RecommendationCard({
   currentPeriod,
+  deletionActive,
   initialRecommendations,
 }: {
   currentPeriod: { startDate: string; endDate: string; label: string }
+  deletionActive: boolean
   initialRecommendations: RecommendationView[]
 }) {
   const [recommendations, setRecommendations] = useState(initialRecommendations)
@@ -217,11 +219,15 @@ export function RecommendationCard({
         </div>
         <button
           className="primaryButton"
-          disabled={working}
+          disabled={deletionActive || working}
           onClick={refreshRecommendations}
           type="button"
         >
-          {working ? 'Queueing…' : 'Refresh recommendations'}
+          {deletionActive
+            ? 'Disabled during deletion'
+            : working
+              ? 'Queueing…'
+              : 'Refresh recommendations'}
         </button>
       </div>
 
@@ -348,7 +354,9 @@ export function RecommendationCard({
                   <div>
                     <button
                       className="secondaryButton"
-                      disabled={recommendation.status === 'accepted'}
+                      disabled={
+                        deletionActive || recommendation.status === 'accepted'
+                      }
                       onClick={() =>
                         void updateRecommendationStatus(
                           recommendation,
@@ -361,7 +369,9 @@ export function RecommendationCard({
                     </button>
                     <button
                       className="textButton"
-                      disabled={recommendation.status === 'dismissed'}
+                      disabled={
+                        deletionActive || recommendation.status === 'dismissed'
+                      }
                       onClick={() =>
                         void updateRecommendationStatus(
                           recommendation,
